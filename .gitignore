@@ -1,0 +1,26 @@
+# CMake
+build/
+out/
+
+# colcon workspace artifacts
+ros2/build/
+ros2/install/
+ros2/log/
+
+# install staging
+install/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Node / UI
+ui/node_modules/
+ui/dist/
+
+# IDE
+.vs/
+.vscode/
+*.user
