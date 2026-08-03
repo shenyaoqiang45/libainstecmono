@@ -97,7 +97,9 @@ ACAM_API int ac_device_close(ac_device_t* device);
 /* Returns 1 when open, 0 when closed or NULL. */
 ACAM_API int ac_device_is_open(const ac_device_t* device);
 /* String-keyed camera parameters; enumerate keys, types and ranges with
- * ac_device_get_attribute_tree_json() (*out_json freed via ac_string_free()). */
+ * ac_device_get_attribute_tree_json() (*out_json freed via ac_string_free()).
+ * Always the flat ABI schema {"attributes":[{"key","type"(int|float|bool),
+ * optional min/max/step/default},...]} — vendor GenICam trees are normalized. */
 ACAM_API int ac_device_get_attribute_tree_json(ac_device_t* device, char** out_json);
 ACAM_API int ac_device_set_value_int(ac_device_t* device, const char* key, int32_t value);
 ACAM_API int ac_device_set_value_float(ac_device_t* device, const char* key, float value);

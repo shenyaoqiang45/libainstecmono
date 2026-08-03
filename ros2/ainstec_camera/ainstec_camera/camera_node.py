@@ -126,10 +126,12 @@ class AinstecCameraNode(Node):
                 descriptor.description = f'{key} range [{lo}..{hi}] step {step if step is not None else 0}'
                 if atype == 'int':
                     descriptor.integer_range = [
-                        IntegerRange(from_value=int(lo), to_value=int(hi), step=int(step or 0))]
+                        IntegerRange(from_value=int(lo), to_value=int(hi),
+                                     step=max(1, int(step) if step else 1))]
                 elif atype == 'float':
                     descriptor.floating_point_range = [
-                        FloatingPointRange(from_value=float(lo), to_value=float(hi), step=float(step or 0.0))]
+                        FloatingPointRange(from_value=float(lo), to_value=float(hi),
+                                           step=float(step) if step else 0.0)]
             else:
                 descriptor.description = f'{key} ({atype or "unknown type"})'
             self.declare_parameter(f'attr.{key}', value, descriptor)

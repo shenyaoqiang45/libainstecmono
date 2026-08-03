@@ -3,7 +3,7 @@ project(ainstec_bringup)
 
 find_package(ament_cmake REQUIRED)
 
-install(DIRECTORY launch rviz
+install(DIRECTORY launch rviz config
   DESTINATION share/${PROJECT_NAME}
 )
 

@@ -8,6 +8,7 @@
 // Backend selection: each context reads the ACAM_MOCK environment variable
 // once at creation ("1" -> mock backend, otherwise the real vendor SDK).
 #include "ainstec_cam/ainstec_cam.h"
+#include "attribute_tree.hpp"
 #include "camsdk_backend.h"
 
 #include <atomic>
@@ -358,6 +359,9 @@ int ac_device_get_attribute_tree_json(ac_device_t* device, char** out_json) {
         const int ret = device->impl->get_attribute_tree_json(tree, err);
         if (ret != AC_OK)
             return fail(ret, err);
+        // Normalize vendor GenICam trees to the ABI flat {"attributes":[...]}
+        // schema (mock already emits flat and is a pass-through).
+        tree = acam::flatten_attribute_tree_json(tree);
         char* p = dup_cstr(tree);
         if (p == nullptr)
             return fail(acam::kErrNoMemory, "ac_device_get_attribute_tree_json: out of memory");

@@ -1,7 +1,14 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, SetEnvironmentVariable
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+# Fast DDS 2.14+ Large Data Mode: UDP discovery, SHM/TCP for samples.
+# PRO-WR RGB / full points are ~24 MB each; 48 MB leaves CDR headroom.
+_FASTDDS_LARGE_DATA = (
+    'LARGE_DATA?max_msg_size=48MB&sockets_size=64MB'
+    '&non_blocking=true&tcp_negotiation_timeout=100'
+)
 
 
 def generate_launch_description():
@@ -11,6 +18,11 @@ def generate_launch_description():
     preview_decimation = LaunchConfiguration('preview_decimation')
 
     return LaunchDescription([
+        # Apply to this launch's child processes (camera node). Subscribers in
+        # other shells still need activate_ros.ps1 / ros_shell.bat to set the
+        # same variable, otherwise discovery/transport mismatch drops samples.
+        SetEnvironmentVariable(
+            name='FASTDDS_BUILTIN_TRANSPORTS', value=_FASTDDS_LARGE_DATA),
         DeclareLaunchArgument(
             'camera_ip', default_value='',
             description='Camera IP to open; empty = first discovered camera.'),

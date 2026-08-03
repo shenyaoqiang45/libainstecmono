@@ -47,7 +47,7 @@ ros2 service call /ainstec_camera/capture std_srvs/srv/Trigger "{}"
 
 动态参数 `attr.*`（镜像设备属性树）：
 
-- 启动时经 `Device.params()`（厂商 `GetAttributeTreeJson`）枚举属性树，为每个键 declare `attr.<key>`；初值取自相机当前值，读不到的键跳过。
+- 启动时经 `Device.params()`（L2 已把厂商 GenICam 树规范为扁平 `attributes[]`）枚举属性树，为每个键 declare `attr.<key>`；初值取自相机当前值，读不到的键跳过。
 - 属性树提供 min/max 时写入 `IntegerRange`/`FloatingPointRange` descriptor（类型/范围/步长来自属性树）；否则仅写 description。
 - set 回调（`add_on_set_parameters_callback`）：**非 `attr.` 前缀一律拒绝**（`read-only`）；`attr.*` 直发相机 `Device.set(key, value)`，按 Python 值类型分派 bool/int/float，相机拒绝则 `successful=False` 并带原因。
 
@@ -64,6 +64,7 @@ ros2 launch ainstec_bringup camera.launch.py \
 
 `ainstec_bringup/launch/viewer.launch.py`：include `camera.launch.py`（默认参数）+ `rosbridge_websocket_launch.xml`（rosbridge WebSocket 默认 `:9090`，同时带起 `rosapi`）。找不到 `rosbridge_server` 包时直接报错并提示安装 `ros-jazzy-rosbridge-suite`。UI（`ui/`）经 `:9090` 消费上述话题/服务——这是 UI 与本层的全部契约。
 
+rosbridge 参数（viewer 覆盖）：`max_message_size:=67108864`（64 MiB；上游默认 10 MB，不够装 PRO-WR depth/RGB 的 JSON base64）、`use_compression:=true`。
 rviz 配置：`ainstec_bringup/rviz/ainstec.rviz`（随包安装到 share）。
 
 ## Windows / RoboStack 实操要点
@@ -84,7 +85,8 @@ rviz 配置：`ainstec_bringup/rviz/ainstec.rviz`（随包安装到 share）。
 
 激活与运行：
 
-- PowerShell：`. scripts\activate_ros.ps1 [-Mock]`——conda-hook + `conda activate ainstec_ros` + RoboStack 环境钩子（`Library\local_setup.ps1`）+ `install\python` 入 `PYTHONPATH`/`PATH` + colcon overlay（`ros2\install\local_setup.ps1`，存在时）。
+- PowerShell：`. scripts\activate_ros.ps1 [-Mock]`——conda-hook + `conda activate ainstec_ros` + RoboStack 环境钩子（`Library\local_setup.ps1`）+ `install\python` 入 `PYTHONPATH`/`PATH` + colcon overlay（`ros2\install\local_setup.ps1`，存在时）+ 默认 `FASTDDS_BUILTIN_TRANSPORTS=LARGE_DATA?...`（大图/点云）。
 - **colcon 在 Windows 只生成 `.bat`/`.ps1` setup 脚本**（`ros2/install/` 下无 `.sh`），git-bash 用户走 `scripts\ros_shell.bat <命令>` 在完整激活的 cmd 环境里跑单条命令。
 - **`ACAM_MOCK` 尾随空格坑**：cmd 里 `set ACAM_MOCK=1 && scripts\ros_shell.bat ...` 若 `1` 与 `&&` 之间有空格，变量值变成 `"1 "`，C 层 `strcmp(m, "1")` 失败，**静默走真机后端**。写 `set "ACAM_MOCK=1"` 或紧贴 `&&`。
+- **大消息（Image / PointCloud2）**：默认 UDP 分片 + SensorDataQoS（best effort）下，PRO-WR 单幅 RGB/点云约 24 MB 时订阅方经常收不到。激活脚本与 `camera.launch.py` / `viewer.launch.py` 会设置 Fast DDS 2.14 **Large Data Mode**（`FASTDDS_BUILTIN_TRANSPORTS=LARGE_DATA?max_msg_size=48MB&sockets_size=64MB&non_blocking=true&tcp_negotiation_timeout=100`）：UDP 发现 + SHM/TCP 传样本。**发布端与订阅端进程都必须带同一变量**（另开 shell 跑 `ros2 topic echo` / UI 前也要 `. activate_ros.ps1`）。可选 XML：`share/ainstec_bringup/config/fastdds_large_data.xml`（`FASTRTPS_DEFAULT_PROFILES_FILE`，且不要与 `FASTDDS_BUILTIN_TRANSPORTS` 混用）。
 - 防火墙：真机发现/推流需要入站规则，管理员运行 `scripts\setup_firewall.ps1`（规则名 `Ainstec ROS2 Camera Node`，针对 conda env 的 `python.exe`，UDP+TCP 入站允许）。

@@ -71,10 +71,12 @@ int main() {
     mask = 0;
     CHECK(ac_sensor_get_outputs(srgb, &mask) == AC_OK && mask == AC_OUTPUT_RGB);
 
-    // 3. Attribute tree and parameters.
+    // 3. Attribute tree and parameters (flat ABI schema).
     char* tree = nullptr;
     CHECK(ac_device_get_attribute_tree_json(dev, &tree) == AC_OK);
-    CHECK(tree != nullptr && std::strstr(tree, "Exposure") != nullptr);
+    CHECK(tree != nullptr && std::strstr(tree, "\"attributes\"") != nullptr);
+    CHECK(std::strstr(tree, "\"key\":\"Exposure\"") != nullptr);
+    CHECK(std::strstr(tree, "\"type\":\"int\"") != nullptr);
     ac_string_free(tree);
     CHECK(ac_device_set_value_int(dev, "Exposure", 25) == AC_OK);
     int32_t iv = 0;

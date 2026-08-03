@@ -10,5 +10,7 @@ call %~dp0..\ros2\install\local_setup.bat
 if errorlevel 1 exit /b 1
 set "PYTHONPATH=%~dp0..\install\python;%PYTHONPATH%"
 set "PATH=%~dp0..\install\python;%PATH%"
+rem Fast DDS Large Data Mode — same default as activate_ros.ps1 / camera.launch.py
+if not defined FASTDDS_BUILTIN_TRANSPORTS set "FASTDDS_BUILTIN_TRANSPORTS=LARGE_DATA?max_msg_size=48MB&sockets_size=64MB&non_blocking=true&tcp_negotiation_timeout=100"
 %*
 exit /b %errorlevel%

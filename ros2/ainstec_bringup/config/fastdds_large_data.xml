@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Optional Fast DDS profile for Ainstec large Image / PointCloud2 samples.
+     Preferred path on Fast DDS 2.14+ is the env var set by activate_ros.ps1 /
+     ros_shell.bat / camera.launch.py:
+       FASTDDS_BUILTIN_TRANSPORTS=LARGE_DATA?max_msg_size=48MB&sockets_size=64MB&...
+     Point FASTRTPS_DEFAULT_PROFILES_FILE at this file only if you need an
+     XML-only setup (and keep the env var unset to avoid conflicting transports). -->
+<dds xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <profiles>
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>ainstec_shm</transport_id>
+        <type>SHM</type>
+        <!-- 64 MiB: covers PRO-WR RGB (~24 MB) and full point cloud (~24 MB) + CDR. -->
+        <segment_size>67108864</segment_size>
+        <maxMessageSize>50331648</maxMessageSize>
+      </transport_descriptor>
+      <transport_descriptor>
+        <transport_id>ainstec_udp</transport_id>
+        <type>UDPv4</type>
+        <maxMessageSize>65500</maxMessageSize>
+        <sendBufferSize>16777216</sendBufferSize>
+        <receiveBufferSize>16777216</receiveBufferSize>
+      </transport_descriptor>
+    </transport_descriptors>
+
+    <participant profile_name="ainstec_large_data_participant" is_default_profile="true">
+      <rtps>
+        <userTransports>
+          <transport_id>ainstec_shm</transport_id>
+          <transport_id>ainstec_udp</transport_id>
+        </userTransports>
+        <useBuiltinTransports>false</useBuiltinTransports>
+      </rtps>
+    </participant>
+  </profiles>
+</dds>

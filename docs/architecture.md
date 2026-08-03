@@ -31,7 +31,7 @@ libainstecmono 是 Ainstec 3D 相机的分层软件栈，分层方式对标 libr
 | 概念 | 定义 | 本仓库落地 |
 | --- | --- | --- |
 | context | 全局状态与后端选择 | `ac_context_create()` 读一次 `ACAM_MOCK`：`"1"` → mock，其余 → 真实厂商后端。`ac_context_query_devices(timeout_ms)` 经 UDP 广播发现设备 |
-| device | 一台物理相机 | `open`/`close` 幂等；字符串键参数（int/float/bool set/get）+ `ac_device_get_attribute_tree_json()` 枚举键/类型/范围；`ac_device_get_intrinsics_json()` 返回 3D 相机针孔内参（须先 open）；`ac_device_get_info_json()` 无需 open |
+| device | 一台物理相机 | `open`/`close` 幂等；字符串键参数（int/float/bool set/get）+ `ac_device_get_attribute_tree_json()` 枚举键/类型/范围（**始终扁平** `{"attributes":[{"key","type",...}]}`；真机 GenICam 树在 L2 规范化）；`ac_device_get_intrinsics_json()` 返回 3D 相机针孔内参（须先 open）；`ac_device_get_info_json()` 无需 open |
 | sensor | 设备内的采集单元 | 双 sensor：index 0 = `"3D Module"`（点云/深度/IR/法线），index 1 = `"RGB Camera"`（彩色纹理）。借用句柄，生命周期随 device。每个 sensor 一个输出掩码（`AC_OUTPUT_*` 位） |
 | frame | 一个 typed 数据平面 | 类型：`AC_FRAME_DEPTH`（float32 毫米）、`AC_FRAME_IR`（uint8 mono）、`AC_FRAME_RGB`（uint8 packed RGB）、`AC_FRAME_POINTS`（float32 xyz，`w`=点数、`h`=1）、`AC_FRAME_NORMALS`。引用计数，`ac_frame_get_data()` 零拷贝 |
 | frameset | 一次采集产出的全部帧 | 一次 `Capture()` 拆成 typed frames，全部 frame 经 `std::shared_ptr` 共享同一份 `CaptureData` 所有权；`ac_frameset_find(type)` 按类型取借用帧 |
@@ -82,3 +82,4 @@ C 测试（`camsdk_c/tests/test_camsdk_c.cpp`）与 pytest（`bindings/python/te
 6. **软触发工作模式**：`Open()` 后立即 `SetValue("TriggerMode", Camera_SoftTrigger)`（同厂商 Capture 示例），之后的每次 `Capture()` 都是一次软触发采集。
 7. **标定头不封装**：厂商 `include/` 里还有标定/手眼标定头与 `camera_calibration.dll`、`hand_eye_calibration.dll`。标定是出厂/离线一次性流程（用厂商工具完成），不属于运行时采集路径；运行时需要的内参已由 `Get3DCameraIntrinsic` 暴露并封装为 `ac_device_get_intrinsics_json()`。故 C ABI 不封装标定 API，避免扩大 ABI 表面。
 8. **运行时 DLL 部署**：消费 `ainstec_cam` 的二进制旁边必须放 `CameraPro.dll`、`opencv_world410.dll`、`CameraProAuthority.dll`、`msvcp140.dll`、`vcruntime140.dll`（`FindAinstecCamSDK.cmake` 的 `ainstec_copy_runtime_dlls()` 构建后自动拷贝；`install/python` 暂存亦含全套）。Debug 构建另需 `CameraProd.dll` + `opencv_world410d.dll`。
+9. **`GetAttributeTreeJson` 真机是嵌套 GenICam**：顶层为 `Description`/`Feature`/`Type`/`Version`。L2 在 `ac_device_get_attribute_tree_json` 出口经 `flatten_attribute_tree_json` 规范为扁平 `{"attributes":[{"key","type"(int|float|bool),...}]}`（`Enumeration`→`int`，缺省 `step` 对 int 补 1）；mock 本就扁平，直接透传。键名仍是叶节点名（如 `Exposure`），与 `GetValue`/`SetValue` 一致。

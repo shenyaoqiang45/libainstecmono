@@ -47,6 +47,13 @@ $env:PATH = "$pyStage;$env:PATH"
 $wsSetup = Join-Path $repoRoot 'ros2\install\local_setup.ps1'
 if (Test-Path $wsSetup) { . $wsSetup }
 
+# Fast DDS Large Data Mode (2.14+): SHM/TCP for Image / PointCloud2 ~24 MB.
+# Must be set in EVERY ROS 2 process (pub and sub); launch files set it too.
+if (-not $env:FASTDDS_BUILTIN_TRANSPORTS) {
+    $env:FASTDDS_BUILTIN_TRANSPORTS =
+        'LARGE_DATA?max_msg_size=48MB&sockets_size=64MB&non_blocking=true&tcp_negotiation_timeout=100'
+}
+
 if ($Mock) { $env:ACAM_MOCK = '1' }
 
-Write-Host "ainstec_ros activated  (repo: $repoRoot, ACAM_MOCK='$($env:ACAM_MOCK)')"
+Write-Host "ainstec_ros activated  (repo: $repoRoot, ACAM_MOCK='$($env:ACAM_MOCK)', FASTDDS_BUILTIN_TRANSPORTS='$($env:FASTDDS_BUILTIN_TRANSPORTS)')"
