@@ -23,6 +23,8 @@ libainstecmono 是 Ainstec 3D 相机的分层软件栈，分层方式对标 libr
 | `ac_filter`（`"decimation"`） | `rs2::decimation_filter` / processing block | frameset → frameset 处理块，按名创建 |
 | `ac_pipeline` | `rs2_pipeline` | 触发 + worker 线程 + 有界帧队列 |
 | 字符串键参数 + `GetAttributeTreeJson` | `rs2_options` | 选项枚举/读写 |
+| `ac_device_record_to_file` / `stop_record` | `rs2::recorder` | 把活设备的 capture 追加写入自研 `.acam`（v1：无 pause） |
+| `ac_context_load_device(path)` | `rs2::playback` / `ctx.load_device` | 从 `.acam` 加载回放设备；顺序 `capture`，EOF→无数据；无 seek/倍速 |
 
 ## 对象模型
 
@@ -30,7 +32,7 @@ libainstecmono 是 Ainstec 3D 相机的分层软件栈，分层方式对标 libr
 
 | 概念 | 定义 | 本仓库落地 |
 | --- | --- | --- |
-| context | 全局状态与后端选择 | `ac_context_create()` 读一次 `ACAM_MOCK`：`"1"` → mock，其余 → 真实厂商后端。`ac_context_query_devices(timeout_ms)` 经 UDP 广播发现设备 |
+| context | 全局状态与后端选择 | `ac_context_create()` 读一次 `ACAM_MOCK`：`"1"` → mock，其余 → 真实厂商后端。`ac_context_query_devices(timeout_ms)` 经 UDP 广播发现设备；`ac_context_load_device(path)` 加载 `.acam` 回放设备（不经 L1） |
 | device | 一台物理相机 | `open`/`close` 幂等；字符串键参数（int/float/bool set/get）+ `ac_device_get_attribute_tree_json()` 枚举键/类型/范围（**始终扁平** `{"attributes":[{"key","type",...}]}`；真机 GenICam 树在 L2 规范化）；`ac_device_get_intrinsics_json()` 返回 3D 相机针孔内参（须先 open）；`ac_device_get_info_json()` 无需 open |
 | sensor | 设备内的采集单元 | 双 sensor：index 0 = `"3D Module"`（点云/深度/IR/法线），index 1 = `"RGB Camera"`（彩色纹理）。借用句柄，生命周期随 device。每个 sensor 一个输出掩码（`AC_OUTPUT_*` 位） |
 | frame | 一个 typed 数据平面 | 类型：`AC_FRAME_DEPTH`（float32 毫米）、`AC_FRAME_IR`（uint8 mono）、`AC_FRAME_RGB`（uint8 packed RGB）、`AC_FRAME_POINTS`（float32 xyz，`w`=点数、`h`=1）、`AC_FRAME_NORMALS`。引用计数，`ac_frame_get_data()` 零拷贝 |
@@ -38,6 +40,7 @@ libainstecmono 是 Ainstec 3D 相机的分层软件栈，分层方式对标 libr
 | processing 框架 | frameset → frameset 的处理管线约定 | `ac_filter_process(in, out)`；filter 不处理的帧 `add_ref` 后直通进输出集，处理的帧共享一个新的 `BufferCapture` |
 | filter | 具体算法块 | v1 仅 `"decimation"`：配置键 `"factor"`（整数 ≥1，默认 1 = 直通）；POINTS 每 factor 取 1（`count/factor`），DEPTH/IR/RGB 步进抽稀到 `(w/factor, h/factor)`（下限 1 像素） |
 | pipeline | 采集总调度 | 单 worker 线程执行全部 `capture()`；手动触发（`ac_pipeline_trigger()` 入队一个信号，立即返回）或定频自触发（`ac_pipeline_set_auto_trigger(hz)`，`0`=手动）；帧集进 capacity-2 drop-oldest 队列，`ac_pipeline_wait_for_frames(timeout_ms)` 弹出 |
+| record / playback | 文件设备（对标 librealsense recorder/playback） | 自研单文件 `.acam` v1（与 L1 无关）。`ac_device_record_to_file(path)` 在已 open 的设备上套 `RecordingDevice` 装饰器，后续 capture 追加 frameset；`ac_device_stop_record` 写 EOF 并卸包装。`ac_context_load_device(path)` 返回 `PlaybackDevice`（只读参数、顺序吐帧；EOF 为 `kErrNoData`，pipeline 静默丢弃失败 capture）。格式：magic/`version`/header JSON（info、扁平 attributes、values 快照、intrinsics）+ `FRM1` frameset 流 + `EOF1` |
 
 真实后端的一次 capture：取所有 sensor 输出掩码的并集 → 映射为厂商 `OutputSettings`（`sendPoint3D/sendDepthmap/sendRemapTexture/sendTexture/sendNormals`）→ `Camera::Capture()` 填充 `FrameData` → 按掩码拆 typed planes（`camsdk_c/src/ainstec_backend.cpp`）。
 

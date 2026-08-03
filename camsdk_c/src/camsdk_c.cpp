@@ -10,6 +10,7 @@
 #include "ainstec_cam/ainstec_cam.h"
 #include "attribute_tree.hpp"
 #include "camsdk_backend.h"
+#include "record_playback.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -250,6 +251,26 @@ int ac_context_query_devices(ac_context_t* ctx, uint32_t timeout_ms, ac_device_l
     ACAM_CATCH("ac_context_query_devices")
 }
 
+int ac_context_load_device(ac_context_t* ctx, const char* path, ac_device_t** out) {
+    clear_error();
+    if (ctx == nullptr)
+        return fail(acam::kErrNullPtr, "ac_context_load_device: ctx is NULL");
+    if (path == nullptr)
+        return fail(acam::kErrNullPtr, "ac_context_load_device: path is NULL");
+    if (out == nullptr)
+        return fail(acam::kErrNullPtr, "ac_context_load_device: out is NULL");
+    *out = nullptr;
+    try {
+        std::string err;
+        std::shared_ptr<acam::BackendDevice> impl = acam::create_playback_device(path, err);
+        if (!impl)
+            return fail(acam::kErrInvalidParam, err.empty() ? "load_device failed" : err);
+        *out = new ac_device_t{std::move(impl), {}};
+        return AC_OK;
+    }
+    ACAM_CATCH("ac_context_load_device")
+}
+
 /* ---- device list / device ---- */
 
 size_t ac_device_list_count(const ac_device_list_t* list) {
@@ -442,6 +463,36 @@ int ac_device_get_value_bool(ac_device_t* device, const char* key, int* out) {
         return AC_OK;
     }
     ACAM_CATCH("ac_device_get_value_bool")
+}
+
+int ac_device_record_to_file(ac_device_t* device, const char* path) {
+    clear_error();
+    if (invalid(device))
+        return fail(acam::kErrNullPtr, "ac_device_record_to_file: device is NULL");
+    if (path == nullptr)
+        return fail(acam::kErrNullPtr, "ac_device_record_to_file: path is NULL");
+    try {
+        std::string err;
+        const int ret = acam::begin_recording(device->impl, path, err);
+        if (ret != AC_OK)
+            return fail(ret, err);
+        return AC_OK;
+    }
+    ACAM_CATCH("ac_device_record_to_file")
+}
+
+int ac_device_stop_record(ac_device_t* device) {
+    clear_error();
+    if (invalid(device))
+        return fail(acam::kErrNullPtr, "ac_device_stop_record: device is NULL");
+    try {
+        std::string err;
+        const int ret = acam::end_recording(device->impl, err);
+        if (ret != AC_OK)
+            return fail(ret, err);
+        return AC_OK;
+    }
+    ACAM_CATCH("ac_device_stop_record")
 }
 
 int ac_device_get_intrinsics_json(ac_device_t* device, char** out_json) {

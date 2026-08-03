@@ -2,8 +2,10 @@
  *
  * Object model in the style of librealsense/Orbbec:
  *   context      backend selection (ACAM_MOCK env) + device discovery
+ *                + load_device(.acam playback)
  *   device list  snapshot of discovered devices (reference-counted devices)
  *   device       open/close + string-keyed parameters
+ *                + optional record_to_file (.acam, librealsense recorder-like)
  *   sensor       capture unit of a device with its own output mask (borrowed)
  *   frame        one typed data plane (reference-counted)
  *   frameset     the typed frames produced by one capture
@@ -76,6 +78,11 @@ ACAM_API ac_context_t* ac_context_create(void);
 ACAM_API void ac_context_destroy(ac_context_t* ctx);
 /* Discover devices via UDP broadcast, waiting up to timeout_ms. */
 ACAM_API int ac_context_query_devices(ac_context_t* ctx, uint32_t timeout_ms, ac_device_list_t** out);
+/* Load a playback device from a self-contained .acam recording. Returns a NEW
+ * device reference (release with ac_device_release()). Independent of ACAM_MOCK
+ * / vendor backend; does not use the L1 CamSDK. Sequential capture only (no
+ * seek / pause / speed in v1). */
+ACAM_API int ac_context_load_device(ac_context_t* ctx, const char* path, ac_device_t** out);
 
 /* ---- device list / device ---- */
 
@@ -112,6 +119,13 @@ ACAM_API int ac_device_get_value_bool(ac_device_t* device, const char* key, int*
  * ac_string_free()). W/H are the depth-map dimensions. Requires the device
  * to be OPEN (error otherwise). */
 ACAM_API int ac_device_get_intrinsics_json(ac_device_t* device, char** out_json);
+/* Start recording captures from this (already open) device into a .acam file.
+ * Subsequent pipeline captures append framesets. Fails if already recording.
+ * Mirrors rs2::recorder at the device layer (minimal: no pause). */
+ACAM_API int ac_device_record_to_file(ac_device_t* device, const char* path);
+/* Finalize the .acam file (EOF trailer) and stop recording. Idempotent if the
+ * device is not currently recording. */
+ACAM_API int ac_device_stop_record(ac_device_t* device);
 
 /* ---- sensors (borrowed from their device) ---- */
 

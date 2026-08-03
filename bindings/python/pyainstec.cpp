@@ -74,6 +74,7 @@ public:
     ac_context_t* handle() const { return ctx_; }
 
     std::vector<class Device> query_devices(uint32_t timeout_ms);
+    Device load_device(const std::string& path);
 
 private:
     ac_context_t* ctx_;
@@ -122,6 +123,11 @@ public:
         else
             throw py::type_error("set(): value must be bool, int or float");
     }
+
+    void record_to_file(const std::string& path) {
+        check(ac_device_record_to_file(dev_, path.c_str()));
+    }
+    void stop_record() { check(ac_device_stop_record(dev_)); }
 
     py::object get(const std::string& key) const {
         const std::string type = attribute_type(key);
@@ -498,6 +504,12 @@ std::vector<Device> Context::query_devices(uint32_t timeout_ms) {
     return out;
 }
 
+Device Context::load_device(const std::string& path) {
+    ac_device_t* dev = nullptr;
+    check(ac_context_load_device(ctx_, path.c_str(), &dev));
+    return Device(dev);
+}
+
 } // namespace
 
 PYBIND11_MODULE(pyainstec, m) {
@@ -525,7 +537,9 @@ PYBIND11_MODULE(pyainstec, m) {
     py::class_<Context>(m, "Context")
         .def(py::init<>())
         .def("query_devices", &Context::query_devices, py::arg("timeout_ms") = 1000,
-             "Discover devices, waiting up to timeout_ms; returns a list of Device.");
+             "Discover devices, waiting up to timeout_ms; returns a list of Device.")
+        .def("load_device", &Context::load_device, py::arg("path"),
+             "Load a playback Device from an .acam recording.");
 
     py::class_<Device>(m, "Device")
         .def_property_readonly("info", &Device::info,
@@ -542,6 +556,10 @@ PYBIND11_MODULE(pyainstec, m) {
              "Set a parameter; bool/int/float dispatch on the Python value type.")
         .def("get", &Device::get, py::arg("key"),
              "Get a parameter; the getter is chosen from the attribute-tree type.")
+        .def("record_to_file", &Device::record_to_file, py::arg("path"),
+             "Start appending captures to an .acam file (device must be open).")
+        .def("stop_record", &Device::stop_record,
+             "Finalize the .acam recording (idempotent if not recording).")
         .def("__enter__", &Device::enter)
         .def("__exit__", &Device::exit);
 

@@ -246,6 +246,48 @@ def test_unknown_filter_raises():
         ac.Filter("nope")
 
 
+def test_acam_record_playback(tmp_path, ctx, open_device):
+    path = str(tmp_path / "clip.acam")
+    sensors = open_device.sensors
+    sensors[0].outputs = ac.OUTPUT_IR
+    sensors[1].outputs = 0
+    open_device.set("Exposure", 25)
+    open_device.record_to_file(path)
+
+    samples = []
+    with ac.Pipeline(ctx) as pipe:
+        pipe.open(open_device)
+        pipe.start()
+        for _ in range(2):
+            pipe.trigger()
+            fs = pipe.wait_for_frames(5000)
+            ir = fs.find(ac.FRAME_IR).ir()
+            assert ir.shape == (1024, 1280)
+            samples.append(int(ir.flat[100]))
+    open_device.stop_record()
+    open_device.stop_record()  # idempotent
+
+    play = ctx.load_device(path)
+    play.open()
+    with pytest.raises(ac.Error):
+        play.set("Exposure", 1)
+    assert play.get("Exposure") == 25
+    assert play.intrinsics()["fx"] == 1000.0
+    play.sensors[0].outputs = ac.OUTPUT_IR
+    play.sensors[1].outputs = 0
+    with ac.Pipeline(ctx) as pipe:
+        pipe.open(play)
+        pipe.start()
+        for expected in samples:
+            pipe.trigger()
+            fs = pipe.wait_for_frames(5000)
+            assert int(fs.find(ac.FRAME_IR).ir().flat[100]) == expected
+        pipe.trigger()
+        with pytest.raises(ac.Error):
+            pipe.wait_for_frames(500)
+    play.close()
+
+
 def test_filter_default_is_passthrough(frameset):
     passthrough = ac.Filter("decimation")
     out = passthrough.process(frameset)
