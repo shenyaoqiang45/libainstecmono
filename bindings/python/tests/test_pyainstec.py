@@ -64,6 +64,22 @@ def test_context_query_one_mock_device(ctx):
     assert set(info) >= {"name", "model", "ip", "serial", "mac"}
 
 
+def test_mock_multi_device_env(monkeypatch):
+    # Test-only knob: ACAM_MOCK_DEVICES=N fakes N distinguishable cameras.
+    monkeypatch.setenv("ACAM_MOCK_DEVICES", "2")
+    ctx2 = ac.Context()
+    devices = ctx2.query_devices()
+    assert len(devices) == 2
+    infos = [d.info for d in devices]
+    assert {i["serial"] for i in infos} == {"MOCK0001", "MOCK0002"}
+    assert {i["ip"] for i in infos} == {"10.0.0.1", "10.0.0.2"}
+    # Both open and close independently.
+    for d in devices:
+        d.open()
+        assert d.is_open
+        d.close()
+
+
 def test_open_close_is_open(device):
     assert not device.is_open
     device.open()

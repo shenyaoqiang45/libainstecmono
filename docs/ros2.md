@@ -46,6 +46,7 @@ ros2 service call /ainstec_camera/capture std_srvs/srv/Trigger "{}"
 | 参数 | 类型 | 默认 | 说明 |
 | --- | --- | --- | --- |
 | `camera_ip` | string | `''` | 要打开的相机 IP；空串 = 发现列表第一台。指定 IP 未发现则节点启动失败 |
+| `camera_serial` | string | `''` | 要打开的相机序列号；非空时优先于 `camera_ip`（序列号不受 DHCP 影响，多相机推荐） |
 | `frame_id` | string | `'ainstec_camera'` | depth/ir/points 消息的 TF frame id，也是 TF 静态变换的父 frame |
 | `rgb_frame_id` | string | `''` | rgb 话题的 TF frame id；空串 = `<frame_id>_rgb` |
 | `continuous_hz` | double | `0.0` | 定频自触发 Hz；`0` = 仅手动（`~/capture`）。>0 时映射到 `Pipeline.auto_trigger` |
@@ -57,7 +58,7 @@ ros2 service call /ainstec_camera/capture std_srvs/srv/Trigger "{}"
 - 属性树提供 min/max 时写入 `IntegerRange`/`FloatingPointRange` descriptor（类型/范围/步长来自属性树）；否则仅写 description。
 - set 回调（`add_on_set_parameters_callback`）：**非 `attr.` 前缀一律拒绝**（`read-only`）；`attr.*` 直发相机 `Device.set(key, value)`，按 Python 值类型分派 bool/int/float，相机拒绝则 `successful=False` 并带原因。
 
-启动行为（核实自 `camera_node.py`）：`query_devices(1000)` → 按 `camera_ip` 过滤 → open → 3D sensor 掩码设为 `POINT3D|DEPTH|IR`、RGB sensor（名字含 `rgb`）设为 `RGB` → pipeline open/start → 读取内参（须 open）。设备打开后 sensor 数量可能从 1 变为 2（`rgbStatus` 见 docs/architecture.md）。
+启动行为（核实自 `camera_node.py`）：`query_devices(1000)` → 按 `camera_serial`（优先）或 `camera_ip` 过滤 → open → 3D sensor 掩码设为 `POINT3D|DEPTH|IR`、RGB sensor（名字含 `rgb`）设为 `RGB` → pipeline open/start → 读取内参与标定（须 open）→ 发布 `/tf_static` 静态变换。设备打开后 sensor 数量可能从 1 变为 2（`rgbStatus` 见 docs/architecture.md）。
 
 ## Launch
 
@@ -67,6 +68,17 @@ ros2 service call /ainstec_camera/capture std_srvs/srv/Trigger "{}"
 ros2 launch ainstec_bringup camera.launch.py \
   camera_ip:=192.168.1.100 continuous_hz:=1.0 frame_id:=ainstec_camera preview_decimation:=8
 ```
+
+**多相机**：每台相机起一个实例，用 launch 参数 `namespace` 隔离话题/服务（落在 `/<ns>/ainstec_camera/...`），并给每台独立 `frame_id`；选机推荐 `camera_serial`（不受 DHCP 影响）：
+
+```bash
+ros2 launch ainstec_bringup camera.launch.py \
+  namespace:=cam_left camera_serial:=CPWCBD0002303004 frame_id:=cam_left continuous_hz:=1.0
+ros2 launch ainstec_bringup camera.launch.py \
+  namespace:=cam_right camera_serial:=CPSCBDE002405T01 frame_id:=cam_right continuous_hz:=1.0
+```
+
+TF 树由集成方补 `base_link → <frame_id>` 段（手眼标定结果）；节点自身只发布 `frame_id → rgb_frame_id` 的内参级变换。多机硬同步（GPIO 触发/TriggerOut 级联）与互扰预设（`MutualReflectionConfig`）是固件能力，软件层暂以 `attr.*` 切换。
 
 `ainstec_bringup/launch/viewer.launch.py`：include `camera.launch.py`（默认参数）+ `rosbridge_websocket_launch.xml`（rosbridge WebSocket 默认 `:9090`，同时带起 `rosapi`）。找不到 `rosbridge_server` 包时直接报错并提示安装 `ros-jazzy-rosbridge-suite`。UI（`ui/`）经 `:9090` 消费上述话题/服务——这是 UI 与本层的全部契约。
 

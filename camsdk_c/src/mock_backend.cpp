@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -49,12 +50,14 @@ const MockParamDef* find_param(const std::string& key) {
 // The one fake camera: two sensors, params in a map, synthetic frames.
 class MockDevice final : public BackendDevice {
 public:
-    MockDevice() {
+    explicit MockDevice(int index) { // 0-based; index 0 keeps the legacy identity
+        char tail[8];
+        std::snprintf(tail, sizeof(tail), "%d", index + 1);
         desc_.name   = "AinstecMock";
         desc_.model  = "MOCK-3D";
-        desc_.ip     = "10.0.0.1";
-        desc_.serial = "MOCK0001";
-        desc_.mac    = "00:00:00:00:00:01";
+        desc_.ip     = std::string("10.0.0.") + tail;
+        desc_.serial = std::string("MOCK000") + tail;
+        desc_.mac    = std::string("00:00:00:00:00:0") + tail;
     }
 
     const CameraDesc& info() const override { return desc_; }
@@ -276,7 +279,18 @@ public:
     int discover(uint32_t /*timeout_ms*/,
                  std::vector<std::shared_ptr<BackendDevice>>& out,
                  std::string& /*err*/) override {
-        out.assign(1, std::make_shared<MockDevice>());
+        // Test-only knob: ACAM_MOCK_DEVICES=N fakes N distinguishable cameras
+        // (for multi-camera ROS bring-up). Read on every call, like a fresh
+        // broadcast discovery; default 1, clamped to [1, 8].
+        int n = 1;
+        if (const char* env = std::getenv("ACAM_MOCK_DEVICES")) {
+            n = std::atoi(env);
+            if (n < 1) n = 1;
+            if (n > 8) n = 8;
+        }
+        out.clear();
+        for (int i = 0; i < n; ++i)
+            out.push_back(std::make_shared<MockDevice>(i));
         return AC_OK;
     }
 };

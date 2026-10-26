@@ -59,6 +59,7 @@ class AinstecCameraNode(Node):
         super().__init__('ainstec_camera')
 
         self.declare_parameter('camera_ip', '')          # "" = first discovered
+        self.declare_parameter('camera_serial', '')      # "" = select by ip; set = select by serial first
         self.declare_parameter('frame_id', 'ainstec_camera')
         self.declare_parameter('rgb_frame_id', '')       # "" = '<frame_id>_rgb'
         self.declare_parameter('continuous_hz', 0.0)     # 0 = manual triggering
@@ -68,12 +69,13 @@ class AinstecCameraNode(Node):
         rgb_frame_id = self.get_parameter('rgb_frame_id').value
         self._rgb_frame_id = rgb_frame_id if rgb_frame_id else f'{self._frame_id}_rgb'
         camera_ip = self.get_parameter('camera_ip').value
+        camera_serial = self.get_parameter('camera_serial').value
         continuous_hz = float(self.get_parameter('continuous_hz').value)
         self._preview_decimation = int(self.get_parameter('preview_decimation').value)
 
         # --- camera bring-up ---
         self._context = ac.Context()
-        self._device = self._open_device(camera_ip)
+        self._device = self._open_device(camera_ip, camera_serial)
 
         mask_3d = ac.OUTPUT_POINT3D | ac.OUTPUT_DEPTH | ac.OUTPUT_IR
         for sensor in self._device.sensors:
@@ -117,12 +119,21 @@ class AinstecCameraNode(Node):
 
     # ---------------------------------------------------------------- startup
 
-    def _open_device(self, camera_ip):
+    def _open_device(self, camera_ip, camera_serial):
         devices = self._context.query_devices(1000)
         if not devices:
             raise RuntimeError('no Ainstec cameras discovered')
         device = None
-        if camera_ip:
+        # Serial is the robust selector (IPs can change under DHCP); ip is the
+        # fallback, and with neither set we take the first discovered camera.
+        if camera_serial:
+            for candidate in devices:
+                if candidate.info.get('serial') == camera_serial:
+                    device = candidate
+                    break
+            if device is None:
+                raise RuntimeError(f'camera with serial {camera_serial} was not discovered')
+        elif camera_ip:
             for candidate in devices:
                 if candidate.info.get('ip') == camera_ip:
                     device = candidate

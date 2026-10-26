@@ -13,6 +13,8 @@ _FASTDDS_LARGE_DATA = (
 
 def generate_launch_description():
     camera_ip = LaunchConfiguration('camera_ip')
+    camera_serial = LaunchConfiguration('camera_serial')
+    namespace = LaunchConfiguration('namespace')
     continuous_hz = LaunchConfiguration('continuous_hz')
     frame_id = LaunchConfiguration('frame_id')
     preview_decimation = LaunchConfiguration('preview_decimation')
@@ -27,6 +29,13 @@ def generate_launch_description():
             'camera_ip', default_value='',
             description='Camera IP to open; empty = first discovered camera.'),
         DeclareLaunchArgument(
+            'camera_serial', default_value='',
+            description='Camera serial to open; takes precedence over camera_ip.'),
+        DeclareLaunchArgument(
+            'namespace', default_value='',
+            description='Node namespace; set per camera for multi-camera bring-up '
+                        '(e.g. cam_left), topics/services become /<ns>/ainstec_camera/...'),
+        DeclareLaunchArgument(
             'continuous_hz', default_value='0.0',
             description='Auto-trigger rate in Hz (0 = manual triggering via ~/capture).'),
         DeclareLaunchArgument(
@@ -39,9 +48,11 @@ def generate_launch_description():
             package='ainstec_camera',
             executable='ainstec_camera_node',
             name='ainstec_camera',
+            namespace=namespace,
             output='screen',
             parameters=[{
                 'camera_ip': camera_ip,
+                'camera_serial': camera_serial,
                 'continuous_hz': continuous_hz,
                 'frame_id': frame_id,
                 'preview_decimation': preview_decimation,

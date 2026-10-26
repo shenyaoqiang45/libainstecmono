@@ -6,8 +6,17 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 static int g_failures = 0;
+
+static void set_env(const char* key, const char* value) {
+#ifdef _WIN32
+    _putenv((std::string(key) + "=" + value).c_str()); // MSVC _putenv copies
+#else
+    setenv(key, value, 1);
+#endif
+}
 
 #define CHECK(cond)                                                       \
     do {                                                                  \
@@ -20,11 +29,7 @@ static int g_failures = 0;
     } while (0)
 
 int main() {
-#ifdef _WIN32
-    _putenv("ACAM_MOCK=1"); // must happen before ac_context_create()
-#else
-    setenv("ACAM_MOCK", "1", 1);
-#endif
+    set_env("ACAM_MOCK", "1"); // must happen before ac_context_create()
 
     CHECK(ac_last_error() != nullptr);
 
@@ -212,6 +217,25 @@ int main() {
         CHECK(s == nullptr);
         CHECK(ac_last_error() != nullptr && std::strstr(ac_last_error(), "timeout") != nullptr);
     }
+
+    // 8b. Mock multi-device knob: ACAM_MOCK_DEVICES=2 -> two distinguishable
+    // cameras on the next discovery (read per call; default stays 1).
+    set_env("ACAM_MOCK_DEVICES", "2");
+    ac_device_list_t* list2 = nullptr;
+    CHECK(ac_context_query_devices(ctx, 1000, &list2) == AC_OK);
+    CHECK(ac_device_list_count(list2) == 2);
+    ac_device_t* d0 = ac_device_list_get(list2, 0);
+    ac_device_t* d1 = ac_device_list_get(list2, 1);
+    char *j0 = nullptr, *j1 = nullptr;
+    CHECK(ac_device_get_info_json(d0, &j0) == AC_OK);
+    CHECK(ac_device_get_info_json(d1, &j1) == AC_OK);
+    CHECK(j0 != nullptr && std::strstr(j0, "MOCK0001") != nullptr);
+    CHECK(j1 != nullptr && std::strstr(j1, "MOCK0002") != nullptr);
+    ac_string_free(j0);
+    ac_string_free(j1);
+    ac_device_release(d0);
+    ac_device_release(d1);
+    ac_device_list_release(list2);
 
     // 9. Teardown + NULL-safety spot checks.
     CHECK(ac_pipeline_stop(pipe) == AC_OK);
