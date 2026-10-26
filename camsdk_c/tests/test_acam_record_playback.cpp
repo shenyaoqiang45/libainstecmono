@@ -57,7 +57,7 @@ int main() {
         const void* data = nullptr;
         size_t nbytes = 0;
         CHECK(ac_frame_get_data(fir, &data, &nbytes) == AC_OK);
-        CHECK(nbytes == (size_t)1280 * 1024);
+        CHECK(nbytes == (size_t)640 * 512);
         samples[n] = static_cast<const uint8_t*>(data)[100];
         ac_frameset_release(set);
     }
@@ -78,8 +78,13 @@ int main() {
     CHECK(pev == 25);
     char* kjson = nullptr;
     CHECK(ac_device_get_intrinsics_json(play, &kjson) == AC_OK);
-    CHECK(kjson != nullptr && std::strstr(kjson, "\"fx\":1000") != nullptr);
+    CHECK(kjson != nullptr && std::strstr(kjson, "\"fx\":500") != nullptr);
     ac_string_free(kjson);
+    char* cjson = nullptr;
+    CHECK(ac_device_get_calibration_json(play, &cjson) == AC_OK);
+    CHECK(cjson != nullptr && std::strstr(cjson, "\"fx\":520.0") != nullptr); // recorded RGB intrinsics
+    CHECK(cjson != nullptr && std::strstr(cjson, "\"points_to_rgb\":[1,0,0,25") != nullptr);
+    ac_string_free(cjson);
 
     ac_sensor_t* ps3d = ac_device_get_sensor(play, 0);
     ac_sensor_t* psrgb = ac_device_get_sensor(play, 1);

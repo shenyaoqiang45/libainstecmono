@@ -263,6 +263,9 @@ public:
         const int ir = inner_->get_intrinsics_json(hdr.intrinsics_json, err);
         if (ir != AC_OK)
             return ir;
+        const int cr = inner_->get_calibration_json(hdr.calibration_json, err);
+        if (cr != AC_OK)
+            return cr;
         return writer_.open(path, hdr, err);
     }
 
@@ -307,6 +310,9 @@ public:
     }
     int get_intrinsics_json(std::string& out, std::string& err) override {
         return inner_->get_intrinsics_json(out, err);
+    }
+    int get_calibration_json(std::string& out, std::string& err) override {
+        return inner_->get_calibration_json(out, err);
     }
     int set_value_int(const std::string& key, int32_t value, std::string& err) override {
         return inner_->set_value_int(key, value, err);
@@ -355,6 +361,7 @@ public:
             return ret;
         attributes_json_ = hdr.attributes_json;
         intrinsics_json_ = hdr.intrinsics_json;
+        calibration_json_ = hdr.calibration_json; // empty in pre-calibration files
         values_.clear();
         parse_values_map(hdr.values_json, hdr.attributes_json, values_);
         CameraDesc parsed;
@@ -427,6 +434,22 @@ public:
             return kErrNotOpened;
         }
         out = intrinsics_json_;
+        return AC_OK;
+    }
+
+    int get_calibration_json(std::string& out, std::string& err) override {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (!opened_) {
+            err = "device is not open";
+            return kErrNotOpened;
+        }
+        if (!calibration_json_.empty()) {
+            out = calibration_json_;
+            return AC_OK;
+        }
+        // Files written before the calibration field existed only carry the
+        // depth intrinsics; expose them with null RGB/extrinsic fields.
+        out = "{\"depth\":" + intrinsics_json_ + ",\"rgb\":null,\"points_to_rgb\":null}";
         return AC_OK;
     }
 
@@ -504,6 +527,7 @@ private:
     AcamReader reader_;
     std::string attributes_json_;
     std::string intrinsics_json_;
+    std::string calibration_json_;
     std::map<std::string, ParamValue> values_;
     uint32_t masks_[2] = {AC_OUTPUT_POINT3D | AC_OUTPUT_DEPTH | AC_OUTPUT_IR, AC_OUTPUT_RGB};
     Sensor sensor_3d_{this, 0, "3D Module"};

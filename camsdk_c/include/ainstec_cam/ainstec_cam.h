@@ -119,6 +119,17 @@ ACAM_API int ac_device_get_value_bool(ac_device_t* device, const char* key, int*
  * ac_string_free()). W/H are the depth-map dimensions. Requires the device
  * to be OPEN (error otherwise). */
 ACAM_API int ac_device_get_intrinsics_json(ac_device_t* device, char** out_json);
+/* Full calibration of the device as a malloc'ed JSON object (free with
+ * ac_string_free()). Requires the device to be OPEN (error otherwise).
+ * {
+ *   "depth": {"width","height","fx","fy","cx","cy"},  // the depth map's
+ *        virtual camera; identical values to ac_device_get_intrinsics_json()
+ *   "rgb":   {"width","height","fx","fy","cx","cy"} | null,  // RGB camera
+ *        intrinsics; null when the device has no RGB module
+ *   "points_to_rgb": [16] | null  // row-major 4x4 (translation in mm):
+ *        point cloud -> RGB camera frame; null when no RGB module
+ * } */
+ACAM_API int ac_device_get_calibration_json(ac_device_t* device, char** out_json);
 /* Start recording captures from this (already open) device into a .acam file.
  * Subsequent pipeline captures append framesets. Fails if already recording.
  * Mirrors rs2::recorder at the device layer (minimal: no pause). */

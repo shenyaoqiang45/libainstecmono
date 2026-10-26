@@ -14,12 +14,14 @@ namespace acam {
 constexpr uint32_t kAcamVersion = 1;
 
 // Header JSON fields (v1): info, attributes (flat array or tree object),
-// optional values map, intrinsics object.
+// optional values map, intrinsics object, calibration object (added later in
+// v1: absent in older files; readers fall back to depth-only intrinsics).
 struct AcamHeader {
     std::string info_json;         // {"name",...}
     std::string attributes_json;   // {"attributes":[...]} flat tree
     std::string values_json;       // {"Exposure":10,...} optional, may be "{}"
     std::string intrinsics_json;   // {"width",...}
+    std::string calibration_json;  // {"depth":...,"rgb":...,"points_to_rgb":...}
 };
 
 class AcamWriter {

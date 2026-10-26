@@ -104,6 +104,9 @@ public:
     virtual int get_attribute_tree_json(std::string& out, std::string& err) = 0;
     // Pinhole intrinsics JSON; requires the device to be open.
     virtual int get_intrinsics_json(std::string& out, std::string& err) = 0;
+    // Full calibration JSON: depth + RGB intrinsics and the points->RGB
+    // 4x4 extrinsic (null fields when no RGB module). Requires open.
+    virtual int get_calibration_json(std::string& out, std::string& err) = 0;
     virtual int set_value_int(const std::string& key, int32_t value, std::string& err) = 0;
     virtual int set_value_float(const std::string& key, float value, std::string& err) = 0;
     virtual int set_value_bool(const std::string& key, bool value, std::string& err) = 0;

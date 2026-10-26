@@ -516,6 +516,27 @@ int ac_device_get_intrinsics_json(ac_device_t* device, char** out_json) {
     ACAM_CATCH("ac_device_get_intrinsics_json")
 }
 
+int ac_device_get_calibration_json(ac_device_t* device, char** out_json) {
+    clear_error();
+    if (invalid(device))
+        return fail(acam::kErrNullPtr, "ac_device_get_calibration_json: device is NULL");
+    if (out_json == nullptr)
+        return fail(acam::kErrNullPtr, "ac_device_get_calibration_json: out_json is NULL");
+    *out_json = nullptr;
+    try {
+        std::string json, err;
+        const int ret = device->impl->get_calibration_json(json, err);
+        if (ret != AC_OK)
+            return fail(ret, err);
+        char* p = dup_cstr(json);
+        if (p == nullptr)
+            return fail(acam::kErrNoMemory, "ac_device_get_calibration_json: out of memory");
+        *out_json = p;
+        return AC_OK;
+    }
+    ACAM_CATCH("ac_device_get_calibration_json")
+}
+
 /* ---- sensors ---- */
 
 int ac_device_get_sensor_count(const ac_device_t* device) {

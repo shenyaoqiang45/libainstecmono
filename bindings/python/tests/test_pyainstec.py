@@ -125,17 +125,35 @@ def test_set_unknown_param_raises(open_device):
 
 def test_intrinsics_mock_values(open_device):
     intr = open_device.intrinsics()
-    assert intr["width"] == 1280
-    assert intr["height"] == 1024
-    assert intr["fx"] == 1000.0
-    assert intr["fy"] == 1000.0
-    assert intr["cx"] == 640.0
-    assert intr["cy"] == 512.0
+    assert intr["width"] == 640
+    assert intr["height"] == 512
+    assert intr["fx"] == 500.0
+    assert intr["fy"] == 500.0
+    assert intr["cx"] == 320.0
+    assert intr["cy"] == 256.0
 
 
 def test_intrinsics_closed_device_raises(device):
     with pytest.raises(ac.Error):
         device.intrinsics()
+
+
+def test_calibration_mock_values(open_device):
+    calib = open_device.calibration()
+    assert calib["depth"]["width"] == 640
+    assert calib["depth"]["height"] == 512
+    assert calib["depth"]["fx"] == 500.0
+    assert calib["rgb"]["fx"] == 520.0  # deliberately distinguishable from depth
+    assert calib["rgb"]["width"] == 640
+    ext = calib["points_to_rgb"]
+    assert len(ext) == 16
+    assert ext[3] == 25.0  # synthetic 25 mm X shift
+    assert ext[0] == 1.0 and ext[5] == 1.0 and ext[15] == 1.0
+
+
+def test_calibration_closed_device_raises(device):
+    with pytest.raises(ac.Error):
+        device.calibration()
 
 
 # --------------------------------------------------------------- pipeline
@@ -152,25 +170,25 @@ def test_trigger_wait_frameset_of_four(frameset):
 
 def test_frame_shapes_and_dtypes(frameset):
     depth = frameset.find(ac.FRAME_DEPTH)
-    assert depth.size == (1280, 1024)
+    assert depth.size == (640, 512)
     d = depth.depth()
-    assert d.shape == (1024, 1280)  # row-major (h, w)
+    assert d.shape == (512, 640)  # row-major (h, w)
     assert d.dtype == np.float32
-    assert depth.data().shape == (1024, 1280)
+    assert depth.data().shape == (512, 640)
 
     ir = frameset.find(ac.FRAME_IR)
-    assert ir.ir().shape == (1024, 1280)
+    assert ir.ir().shape == (512, 640)
     assert ir.ir().dtype == np.uint8
 
     rgb = frameset.find(ac.FRAME_RGB)
     r = rgb.rgb()
-    assert r.shape == (480, 640, 3)
+    assert r.shape == (512, 640, 3)
     assert r.dtype == np.uint8
 
     points = frameset.find(ac.FRAME_POINTS)
-    assert points.size == (1310720, 1)
+    assert points.size == (327680, 1)
     p = points.points()
-    assert p.shape == (1310720, 3)
+    assert p.shape == (327680, 3)
     assert p.dtype == np.float32
 
     assert isinstance(depth.index, int)
@@ -222,7 +240,7 @@ def test_context_manager_usage(ctx):
             fs = pipe.wait_for_frames(5000)
             assert len(fs) == 4
         # pipeline stopped on __exit__; frameset stays valid
-        assert fs.find(ac.FRAME_DEPTH).depth().shape == (1024, 1280)
+        assert fs.find(ac.FRAME_DEPTH).depth().shape == (512, 640)
     assert not dev.is_open
 
 
@@ -234,11 +252,11 @@ def test_decimation_filter(frameset):
     dec.set_config("factor", 8)
     out = dec.process(frameset)
     assert len(out) == 4  # unhandled frames pass through
-    assert out.find(ac.FRAME_POINTS).points().shape == (1310720 // 8, 3)
-    assert out.find(ac.FRAME_DEPTH).depth().shape == (128, 160)
-    assert out.find(ac.FRAME_RGB).rgb().shape == (60, 80, 3)
+    assert out.find(ac.FRAME_POINTS).points().shape == (327680 // 8, 3)
+    assert out.find(ac.FRAME_DEPTH).depth().shape == (64, 80)
+    assert out.find(ac.FRAME_RGB).rgb().shape == (64, 80, 3)
     # input is untouched
-    assert frameset.find(ac.FRAME_POINTS).points().shape == (1310720, 3)
+    assert frameset.find(ac.FRAME_POINTS).points().shape == (327680, 3)
 
 
 def test_unknown_filter_raises():
@@ -262,7 +280,7 @@ def test_acam_record_playback(tmp_path, ctx, open_device):
             pipe.trigger()
             fs = pipe.wait_for_frames(5000)
             ir = fs.find(ac.FRAME_IR).ir()
-            assert ir.shape == (1024, 1280)
+            assert ir.shape == (512, 640)
             samples.append(int(ir.flat[100]))
     open_device.stop_record()
     open_device.stop_record()  # idempotent
@@ -272,7 +290,8 @@ def test_acam_record_playback(tmp_path, ctx, open_device):
     with pytest.raises(ac.Error):
         play.set("Exposure", 1)
     assert play.get("Exposure") == 25
-    assert play.intrinsics()["fx"] == 1000.0
+    assert play.intrinsics()["fx"] == 500.0
+    assert play.calibration()["rgb"]["fx"] == 520.0  # recorded calibration survives
     play.sensors[0].outputs = ac.OUTPUT_IR
     play.sensors[1].outputs = 0
     with ac.Pipeline(ctx) as pipe:
@@ -291,7 +310,7 @@ def test_acam_record_playback(tmp_path, ctx, open_device):
 def test_filter_default_is_passthrough(frameset):
     passthrough = ac.Filter("decimation")
     out = passthrough.process(frameset)
-    assert out.find(ac.FRAME_POINTS).points().shape == (1310720, 3)
+    assert out.find(ac.FRAME_POINTS).points().shape == (327680, 3)
 
 
 # ---------------------------------------------------------------- lifetime
@@ -319,4 +338,4 @@ def test_frame_survives_frameset_release(pipeline):
     frame = fs.find(ac.FRAME_RGB)
     del fs
     gc.collect()
-    assert frame.rgb().shape == (480, 640, 3)
+    assert frame.rgb().shape == (512, 640, 3)

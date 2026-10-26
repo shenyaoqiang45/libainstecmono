@@ -5,7 +5,11 @@ ROS 2 层是相机数据的主通道。节点实现：`ros2/ainstec_camera/ainst
 - 节点名：`ainstec_camera`，可执行入口 `ainstec_camera_node`（console_scripts）。
 - 所有话题/服务用 `~` 私有命名，实际全名为 `/ainstec_camera/...`。
 - 线程模型：节点内单一接收线程（`ainstec_rx`）是 `Pipeline.wait_for_frames()` 的唯一消费者，发布全部话题；服务回调不触碰帧，故无 frameset 竞态。
-- 所有消息的 `header.frame_id` 取参数 `frame_id`，`header.stamp` 取节点时钟当前时间（非设备时间戳）。
+- depth/ir/points 消息的 `header.frame_id` 取参数 `frame_id`；rgb 话题（image_raw + camera_info）取参数 `rgb_frame_id`（默认 `<frame_id>_rgb`）。`header.stamp` 取节点时钟当前时间（非设备时间戳）。
+
+## TF
+
+节点启动时读取设备标定（`Device.calibration()`），把其中的 `points_to_rgb` 外参（点云坐标系 → RGB 相机坐标系，4×4，mm）**求逆**并换算为米制后，经 `/tf_static`（transient_local，迟到订阅者也能收到）发布静态变换 `frame_id` → `rgb_frame_id`。无 RGB 模块的机型（外参为 null）不发布。相机到机器人本体的变换（base_link → frame_id）不在本节点职责内，由集成方经 URDF/额外 static_transform_publisher 提供。
 
 ## 话题
 
@@ -16,9 +20,10 @@ ROS 2 层是相机数据的主通道。节点实现：`ros2/ainstec_camera/ainst
 | `~/points` | `sensor_msgs/PointCloud2` | x/y/z 各 FLOAT32（offset 0/4/8，point_step 12，height=1，is_dense=true） | 完整点云，坐标为相机原始单位（毫米） |
 | `~/points_preview` | `sensor_msgs/PointCloud2` | 同上 | 经 `decimation` filter（factor = `preview_decimation`）抽稀的预览云，供 UI/低带宽消费；仅当 frameset 含 POINTS 时发布 |
 | `~/depth/image_raw` | `sensor_msgs/Image` | `32FC1`，**米制**（毫米 × 0.001，遵循 REP-118） | 深度图；尺寸随 `depthType`（对齐 IR 或 RGB，见 docs/architecture.md） |
-| `~/depth/camera_info` | `sensor_msgs/CameraInfo` | `plumb_bob`，D 全 0，K 来自设备内参 | 与 depth 严格同步发布（同一帧一前一后）；**没有** `~/rgb/camera_info` |
+| `~/depth/camera_info` | `sensor_msgs/CameraInfo` | `plumb_bob`，D 全 0，K 来自设备内参 | 与 depth 严格同步发布（同一帧一前一后） |
 | `~/ir/image_raw` | `sensor_msgs/Image` | `mono8` | 左 IR 明亮图像 |
-| `~/rgb/image_raw` | `sensor_msgs/Image` | `rgb8` | RGB 纹理；仅当设备 RGB 模块可用（`rgbStatus==0`）且有帧时发布 |
+| `~/rgb/image_raw` | `sensor_msgs/Image` | `rgb8` | RGB 纹理，frame 为 `rgb_frame_id`；仅当设备 RGB 模块可用（`rgbStatus==0`）且有帧时发布 |
+| `~/rgb/camera_info` | `sensor_msgs/CameraInfo` | `plumb_bob`，D 全 0，K 来自 RGB 相机内参 | 与 rgb/image_raw 严格同步；仅 RGB 模块可用时发布 |
 
 ## 服务
 
@@ -41,7 +46,8 @@ ros2 service call /ainstec_camera/capture std_srvs/srv/Trigger "{}"
 | 参数 | 类型 | 默认 | 说明 |
 | --- | --- | --- | --- |
 | `camera_ip` | string | `''` | 要打开的相机 IP；空串 = 发现列表第一台。指定 IP 未发现则节点启动失败 |
-| `frame_id` | string | `'ainstec_camera'` | 所有消息 header 的 TF frame id |
+| `frame_id` | string | `'ainstec_camera'` | depth/ir/points 消息的 TF frame id，也是 TF 静态变换的父 frame |
+| `rgb_frame_id` | string | `''` | rgb 话题的 TF frame id；空串 = `<frame_id>_rgb` |
 | `continuous_hz` | double | `0.0` | 定频自触发 Hz；`0` = 仅手动（`~/capture`）。>0 时映射到 `Pipeline.auto_trigger` |
 | `preview_decimation` | int | `8` | `~/points_preview` 的抽稀因子（decimation filter 的 `factor`） |
 

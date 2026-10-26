@@ -42,6 +42,9 @@ int main() {
     char* kjson = nullptr;
     CHECK(ac_device_get_intrinsics_json(dev, &kjson) != AC_OK);
     CHECK(kjson == nullptr);
+    char* cjson = nullptr;
+    CHECK(ac_device_get_calibration_json(dev, &cjson) != AC_OK);
+    CHECK(cjson == nullptr);
     // The pipeline requires an already-open device.
     ac_pipeline_t* pipe0 = nullptr;
     CHECK(ac_pipeline_create(ctx, &pipe0) == AC_OK);
@@ -51,10 +54,16 @@ int main() {
     CHECK(ac_device_is_open(dev) == 1);
     // Mock intrinsics match its synthetic back-projection.
     CHECK(ac_device_get_intrinsics_json(dev, &kjson) == AC_OK);
-    CHECK(kjson != nullptr && std::strstr(kjson, "\"width\":1280") != nullptr);
-    CHECK(kjson != nullptr && std::strstr(kjson, "\"fx\":1000.0") != nullptr);
-    CHECK(kjson != nullptr && std::strstr(kjson, "\"cx\":640.0") != nullptr);
+    CHECK(kjson != nullptr && std::strstr(kjson, "\"width\":640") != nullptr);
+    CHECK(kjson != nullptr && std::strstr(kjson, "\"fx\":500.0") != nullptr);
+    CHECK(kjson != nullptr && std::strstr(kjson, "\"cx\":320.0") != nullptr);
     ac_string_free(kjson);
+    // Full calibration: depth + RGB intrinsics + points->RGB extrinsic.
+    CHECK(ac_device_get_calibration_json(dev, &cjson) == AC_OK);
+    CHECK(cjson != nullptr && std::strstr(cjson, "\"depth\":{\"width\":640") != nullptr);
+    CHECK(cjson != nullptr && std::strstr(cjson, "\"fx\":520.0") != nullptr); // mock RGB fx
+    CHECK(cjson != nullptr && std::strstr(cjson, "\"points_to_rgb\":[1,0,0,25") != nullptr);
+    ac_string_free(cjson);
 
     // 2. Sensors: names, defaults, output mask roundtrip.
     CHECK(ac_device_get_sensor_count(dev) == 2);
@@ -105,12 +114,12 @@ int main() {
     CHECK(ac_frame_get_type(fpts) == AC_FRAME_POINTS);
     CHECK(ac_frame_get_type(frgb) == AC_FRAME_RGB);
     uint32_t w = 0, h = 0;
-    CHECK(ac_frame_get_size(fdep, &w, &h) == AC_OK && w == 1280 && h == 1024);
-    CHECK(ac_frame_get_size(frgb, &w, &h) == AC_OK && w == 640 && h == 480);
+    CHECK(ac_frame_get_size(fdep, &w, &h) == AC_OK && w == 640 && h == 512);
+    CHECK(ac_frame_get_size(frgb, &w, &h) == AC_OK && w == 640 && h == 512);
     const void* pdata = nullptr;
     size_t pbytes = 0;
     CHECK(ac_frame_get_data(fpts, &pdata, &pbytes) == AC_OK);
-    CHECK(pbytes == (size_t)1280 * 1024 * 12);
+    CHECK(pbytes == (size_t)640 * 512 * 12);
     CHECK(pdata != nullptr);
     uint64_t index = 0;
     double ts = 0.0;
@@ -128,7 +137,7 @@ int main() {
     const void* ddata = nullptr;
     size_t dbytes = 0;
     CHECK(ac_frame_get_data(dep, &ddata, &dbytes) == AC_OK);
-    CHECK(ddata != nullptr && dbytes == (size_t)1280 * 1024 * 4);
+    CHECK(ddata != nullptr && dbytes == (size_t)640 * 512 * 4);
     ac_frame_release(dep);
 
     // 6. Filter: decimation by 8, unknown filter, passthrough contract.
@@ -150,9 +159,9 @@ int main() {
     const void* dpd = nullptr;
     size_t dpb = 0;
     CHECK(ac_frame_get_data(dpts, &dpd, &dpb) == AC_OK);
-    CHECK(dpb == (size_t)(1280 * 1024 / 8) * 12);
+    CHECK(dpb == (size_t)(640 * 512 / 8) * 12);
     ac_frame_t* ddep = ac_frameset_find(dset, AC_FRAME_DEPTH);
-    CHECK(ddep != nullptr && ac_frame_get_size(ddep, &w, &h) == AC_OK && w == 160 && h == 128);
+    CHECK(ddep != nullptr && ac_frame_get_size(ddep, &w, &h) == AC_OK && w == 80 && h == 64);
     CHECK(ac_frameset_find(dset, AC_FRAME_RGB) != nullptr); // still present
     ac_frameset_release(set);
     ac_frameset_release(dset);

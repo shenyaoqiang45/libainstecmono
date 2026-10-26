@@ -10,10 +10,12 @@
 namespace acam {
 namespace {
 
-constexpr uint32_t kIrW  = 1280;
-constexpr uint32_t kIrH  = 1024;
+// All sensors share the binned 640x512 resolution of the current product
+// generation (left/right mono and RGB alike).
+constexpr uint32_t kIrW  = 640;
+constexpr uint32_t kIrH  = 512;
 constexpr uint32_t kRgbW = 640;
-constexpr uint32_t kRgbH = 480;
+constexpr uint32_t kRgbH = 512;
 
 // Small deterministic "noise" in [0, 1) mm derived from pixel coordinates.
 float pseudo_noise(uint32_t x, uint32_t y) {
@@ -110,9 +112,9 @@ public:
                     if (depth != nullptr)
                         depth[i] = z;
                     if (points != nullptr) {
-                        // Back-projection with fx=fy=1000, cx=640, cy=512.
-                        points[3 * i + 0] = (static_cast<float>(x) - 640.0f) * z / 1000.0f;
-                        points[3 * i + 1] = (static_cast<float>(y) - 512.0f) * z / 1000.0f;
+                        // Back-projection with fx=fy=500, cx=320, cy=256.
+                        points[3 * i + 0] = (static_cast<float>(x) - 320.0f) * z / 500.0f;
+                        points[3 * i + 1] = (static_cast<float>(y) - 256.0f) * z / 500.0f;
                         points[3 * i + 2] = z;
                     }
                 }
@@ -164,8 +166,23 @@ public:
             err = "device is not open";
             return kErrNotOpened;
         }
-        // Matches the synthetic back-projection (fx=fy=1000, cx=640, cy=512).
-        out = "{\"width\":1280,\"height\":1024,\"fx\":1000.0,\"fy\":1000.0,\"cx\":640.0,\"cy\":512.0}";
+        // Matches the synthetic back-projection (fx=fy=500, cx=320, cy=256).
+        out = "{\"width\":640,\"height\":512,\"fx\":500.0,\"fy\":500.0,\"cx\":320.0,\"cy\":256.0}";
+        return AC_OK;
+    }
+
+    int get_calibration_json(std::string& out, std::string& err) override {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (!opened_) {
+            err = "device is not open";
+            return kErrNotOpened;
+        }
+        // Synthetic calibration: "depth" matches the back-projection above;
+        // the RGB intrinsics differ on purpose (fx=fy=520) so mix-ups are
+        // detectable; the extrinsic is a pure 25 mm X shift.
+        out = "{\"depth\":{\"width\":640,\"height\":512,\"fx\":500.0,\"fy\":500.0,\"cx\":320.0,\"cy\":256.0},"
+              "\"rgb\":{\"width\":640,\"height\":512,\"fx\":520.0,\"fy\":520.0,\"cx\":320.0,\"cy\":256.0},"
+              "\"points_to_rgb\":[1,0,0,25,0,1,0,0,0,0,1,0,0,0,0,1]}";
         return AC_OK;
     }
 

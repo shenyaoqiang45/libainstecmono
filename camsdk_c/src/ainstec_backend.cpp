@@ -191,36 +191,59 @@ public:
             return kErrNotOpened;
         }
         try {
-            // Like the CalibrationParams sample, pick the camera position by
-            // depthType: the depth map lives in the RGB frame when aligned to
-            // RGB, otherwise in the left IR camera frame. W/H follow the same
-            // rule so the intrinsics match the depth frames we hand out.
-            const gen3d::CAMERA_POSITION pos =
-                info_.camParam.depthType == DEPTH_MAP_ALIGN_RGB ? gen3d::CAM_RGB : gen3d::CAM_LEFT;
-            const int w = info_.camParam.depthType == DEPTH_MAP_ALIGN_RGB
-                ? info_.camParam.textureWidth : info_.camParam.irWidth;
-            const int h = info_.camParam.depthType == DEPTH_MAP_ALIGN_RGB
-                ? info_.camParam.textureHeight : info_.camParam.irHeight;
-            std::vector<double> k; // row-major 3x3: k[0]=fx, k[2]=cx, k[4]=fy, k[5]=cy
-            const int ret = sdk_->Get3DCameraIntrinsic(info_, pos, k);
-            if (ret != AC_OK) {
-                err = sdk_msg("Get3DCameraIntrinsic", ret);
-                return ret;
-            }
-            if (k.size() < 9) {
-                err = "Get3DCameraIntrinsic returned unexpected data";
-                return kErrUnknown;
-            }
-            char buf[256];
-            std::snprintf(buf, sizeof(buf),
-                          "{\"width\":%d,\"height\":%d,\"fx\":%.10g,\"fy\":%.10g,\"cx\":%.10g,\"cy\":%.10g}",
-                          w, h, k[0], k[4], k[2], k[5]);
-            out = buf;
-            return AC_OK;
+            return depth_intrinsics_json(out, err);
         } catch (const std::exception& e) {
             err = std::string("Get3DCameraIntrinsic threw: ") + e.what();
         } catch (...) {
             err = "Get3DCameraIntrinsic threw an unknown exception";
+        }
+        return kErrUnknown;
+    }
+    int get_calibration_json(std::string& out, std::string& err) override {
+        std::lock_guard<std::mutex> lk(mu_);
+        if (!opened_) {
+            err = "device is not open";
+            return kErrNotOpened;
+        }
+        try {
+            std::string depth;
+            int ret = depth_intrinsics_json(depth, err);
+            if (ret != AC_OK)
+                return ret;
+            // RGB intrinsics and the points->RGB extrinsic exist only with a
+            // working RGB module; their JSON fields stay null otherwise.
+            std::string rgb = "null";
+            std::string extr = "null";
+            if (info_.rgbStatus == 0) {
+                ret = intrinsics_json_for(gen3d::CAM_RGB, info_.camParam.textureWidth,
+                                          info_.camParam.textureHeight, rgb, err);
+                if (ret != AC_OK)
+                    return ret;
+                std::vector<double> m; // row-major 4x4, translation in mm
+                ret = sdk_->Get3DCameraExtrinsic(info_, gen3d::POINT_TO_CAM_RGB, m);
+                if (ret != AC_OK) {
+                    err = sdk_msg("Get3DCameraExtrinsic", ret);
+                    return ret;
+                }
+                if (m.size() < 16) {
+                    err = "Get3DCameraExtrinsic returned unexpected data";
+                    return kErrUnknown;
+                }
+                extr = "[";
+                for (size_t i = 0; i < 16; ++i) {
+                    char num[40];
+                    std::snprintf(num, sizeof(num), "%s%.10g", i != 0 ? "," : "", m[i]);
+                    extr += num;
+                }
+                extr += "]";
+            }
+            out = "{\"depth\":" + depth + ",\"rgb\":" + rgb +
+                  ",\"points_to_rgb\":" + extr + "}";
+            return AC_OK;
+        } catch (const std::exception& e) {
+            err = std::string("calibration query threw: ") + e.what();
+        } catch (...) {
+            err = "calibration query threw an unknown exception";
         }
         return kErrUnknown;
     }
@@ -300,6 +323,43 @@ private:
     template <typename Fn>
     int sdk_call(const std::string& what, Fn&& fn, std::string& err) {
         return sdk_call(what, std::forward<Fn>(fn), err, [] {});
+    }
+
+    // Intrinsics of the depth map's virtual camera. Like the CalibrationParams
+    // sample, pick the camera position by depthType: the depth map lives in
+    // the RGB frame when aligned to RGB, otherwise in the left IR camera
+    // frame. W/H follow the same rule so the intrinsics match the depth
+    // frames we hand out. Caller must hold mu_.
+    int depth_intrinsics_json(std::string& out, std::string& err) {
+        const bool aligned_rgb = info_.camParam.depthType == DEPTH_MAP_ALIGN_RGB;
+        return intrinsics_json_for(aligned_rgb ? gen3d::CAM_RGB : gen3d::CAM_LEFT,
+                                   aligned_rgb ? info_.camParam.textureWidth
+                                               : info_.camParam.irWidth,
+                                   aligned_rgb ? info_.camParam.textureHeight
+                                               : info_.camParam.irHeight,
+                                   out, err);
+    }
+
+    // Queries the 3x3 intrinsics of one camera position and formats the flat
+    // pinhole JSON. Caller must hold mu_.
+    int intrinsics_json_for(gen3d::CAMERA_POSITION pos, int w, int h,
+                            std::string& out, std::string& err) {
+        std::vector<double> k; // row-major 3x3: k[0]=fx, k[2]=cx, k[4]=fy, k[5]=cy
+        const int ret = sdk_->Get3DCameraIntrinsic(info_, pos, k);
+        if (ret != AC_OK) {
+            err = sdk_msg("Get3DCameraIntrinsic", ret);
+            return ret;
+        }
+        if (k.size() < 9) {
+            err = "Get3DCameraIntrinsic returned unexpected data";
+            return kErrUnknown;
+        }
+        char buf[160];
+        std::snprintf(buf, sizeof(buf),
+                      "{\"width\":%d,\"height\":%d,\"fx\":%.10g,\"fy\":%.10g,\"cx\":%.10g,\"cy\":%.10g}",
+                      w, h, k[0], k[4], k[2], k[5]);
+        out = buf;
+        return AC_OK;
     }
 
     gen3d::Camera* sdk_;     // non-owning; owned by AinstecBackend

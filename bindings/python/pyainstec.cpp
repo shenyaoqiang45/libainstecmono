@@ -112,6 +112,8 @@ public:
 
     py::object intrinsics() const { return get_json(ac_device_get_intrinsics_json, dev_); }
 
+    py::object calibration() const { return get_json(ac_device_get_calibration_json, dev_); }
+
     void set(const std::string& key, const py::object& value) {
         // bool must be tested before int: Python bool is a subclass of int.
         if (py::isinstance<py::bool_>(value))
@@ -552,6 +554,9 @@ PYBIND11_MODULE(pyainstec, m) {
         .def("params", &Device::params, "Parsed attribute tree (keys/types/ranges).")
         .def("intrinsics", &Device::intrinsics,
              "Pinhole intrinsics dict (width/height/fx/fy/cx/cy); device must be open.")
+        .def("calibration", &Device::calibration,
+             "Full calibration dict (depth/rgb intrinsics + points_to_rgb 4x4); "
+             "device must be open.")
         .def("set", &Device::set, py::arg("key"), py::arg("value"),
              "Set a parameter; bool/int/float dispatch on the Python value type.")
         .def("get", &Device::get, py::arg("key"),

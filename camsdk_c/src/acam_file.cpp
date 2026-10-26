@@ -126,6 +126,8 @@ std::string build_acam_header_document(const AcamHeader& h) {
     doc += h.values_json.empty() ? "{}" : h.values_json;
     doc += ",\"intrinsics\":";
     doc += h.intrinsics_json.empty() ? "{}" : h.intrinsics_json;
+    doc += ",\"calibration\":";
+    doc += h.calibration_json.empty() ? "{}" : h.calibration_json;
     doc += "}";
     return doc;
 }
@@ -148,6 +150,8 @@ bool parse_acam_header_document(const std::string& doc, AcamHeader& out) {
     out.intrinsics_json = extract_json_value(doc, "intrinsics");
     if (out.intrinsics_json.empty())
         out.intrinsics_json = "{}";
+    // Absent in files written before the calibration field existed.
+    out.calibration_json = extract_json_value(doc, "calibration");
     return true;
 }
 
