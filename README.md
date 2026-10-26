@@ -37,8 +37,8 @@ Ainstec 3D 相机软件栈 monorepo。分层方式对标 librealsense / OrbbecSD
 
 ## 前置条件
 
-- Windows 10/11 x64，Visual Studio 2022（C++ 工作负载），CMake ≥ 3.24。
-- 厂商 CamSDK：默认定位 `C:/3DCameraViewer/CamSDK/CamSDK_CPP`（须含 `include/Camera.h`）。即使只用 mock 后端也必须存在——`find_package(AinstecCamSDK REQUIRED)` 无条件执行，`ainstec_cam` 始终链接厂商库。可用 `-DAINSTEC_CAMSDK_ROOT=<path>` 覆盖。
+- Windows 10/11 x64，Visual Studio 2022（C++ 工作负载），CMake ≥ 3.24；或 Linux x86_64 / aarch64（Jetson）：gcc + CMake ≥ 3.24。
+- 厂商 CamSDK：默认定位 `C:/3DCameraViewer/CamSDK/CamSDK_CPP`（须含 `include/Camera.h`）。即使只用 mock 后端也必须存在——`find_package(AinstecCamSDK REQUIRED)` 无条件执行，`ainstec_cam` 始终链接厂商库。可用 `-DAINSTEC_CAMSDK_ROOT=<path>` 覆盖。SDK 自带三平台运行时：`bin/`（Windows）、`lib/linux_x86_64/`、`lib/linux_arm64/`。
 - Python 3.11（与预置 `pyainstec.cp311` pyd 匹配）+ numpy + pytest；ROS 2 由 `scripts/setup_ros_env.ps1` 创建的 conda 环境同时提供。
 
 ## 快速开始
@@ -49,6 +49,11 @@ Ainstec 3D 相机软件栈 monorepo。分层方式对标 librealsense / OrbbecSD
 cmake --preset msvc-x64
 cmake --build --preset msvc-x64        # RelWithDebInfo，输出在 build/
 ctest --preset msvc-x64                # camsdk_c_smoke，自动用 mock 后端
+
+# Linux（x86_64/aarch64；SDK 路径按实际覆盖）
+cmake --preset linux-x64 -DAINSTEC_CAMSDK_ROOT=/path/to/CamSDK_CPP
+cmake --build --preset linux-x64
+ctest --preset linux-x64
 ```
 
 测试 `camsdk_c_smoke` 在进程内设置 `ACAM_MOCK=1`，覆盖 context/device/sensor/frame/frameset/filter/pipeline 全链路。

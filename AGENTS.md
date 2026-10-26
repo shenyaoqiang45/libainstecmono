@@ -23,6 +23,9 @@ cmake --preset msvc-x64
 cmake --build --preset msvc-x64
 ctest --preset msvc-x64                                # camsdk_c_smoke，mock 后端
 
+# 原生层 Linux（x86_64/aarch64，gcc；SDK 路径用 -DAINSTEC_CAMSDK_ROOT 覆盖）
+cmake --preset linux-x64 && cmake --build --preset linux-x64 && ctest --preset linux-x64
+
 # Python 绑定（需 Python 3.11 + numpy + pytest）
 pytest bindings/python/tests                           # conftest 自动定位产物并设 ACAM_MOCK=1
 cmake --install build --config RelWithDebInfo          # 刷新 install/python 暂存（pyd + 全部 DLL）

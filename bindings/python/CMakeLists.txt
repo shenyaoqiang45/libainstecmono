@@ -17,5 +17,5 @@ target_link_libraries(pyainstec PRIVATE ainstec_cam)
 # Self-contained staging: extension module, C ABI DLL and vendor runtimes
 # side by side in <prefix>/python.
 install(TARGETS pyainstec LIBRARY DESTINATION python RUNTIME DESTINATION python)
-install(TARGETS ainstec_cam RUNTIME DESTINATION python)
+install(TARGETS ainstec_cam RUNTIME DESTINATION python LIBRARY DESTINATION python)
 install(FILES ${AINSTEC_CAMSDK_RUNTIME_DLLS} DESTINATION python)

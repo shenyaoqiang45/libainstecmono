@@ -7,6 +7,15 @@
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build"
+    },
+    {
+      "name": "linux-x64",
+      "displayName": "Linux x86_64 (gcc)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-linux",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
     }
   ],
   "buildPresets": [
@@ -14,6 +23,10 @@
       "name": "msvc-x64",
       "configurePreset": "msvc-x64",
       "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "linux-x64",
+      "configurePreset": "linux-x64"
     }
   ],
   "testPresets": [
@@ -21,6 +34,11 @@
       "name": "msvc-x64",
       "configurePreset": "msvc-x64",
       "configuration": "RelWithDebInfo",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "linux-x64",
+      "configurePreset": "linux-x64",
       "output": { "outputOnFailure": true }
     }
   ]

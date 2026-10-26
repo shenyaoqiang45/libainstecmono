@@ -21,7 +21,11 @@ static int g_failures = 0;
     } while (0)
 
 int main() {
+#ifdef _WIN32
     _putenv("ACAM_MOCK=1");
+#else
+    setenv("ACAM_MOCK", "1", 1);
+#endif
 
     ac_context_t* ctx = ac_context_create();
     CHECK(ctx != nullptr);

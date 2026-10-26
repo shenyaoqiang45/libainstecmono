@@ -1,6 +1,10 @@
 # CMake
 build/
+build-*/
 out/
+
+# vendor SDK drops (firmware zips, release notes)
+cam_sdk/
 
 # colcon workspace artifacts
 ros2/build/

@@ -13,7 +13,8 @@ target_include_directories(ainstec_cam
   PUBLIC  "${CMAKE_CURRENT_SOURCE_DIR}/include"
   PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_definitions(ainstec_cam PRIVATE ACAM_BUILDING_DLL)
-target_link_libraries(ainstec_cam PRIVATE Ainstec::CamSDK)
+find_package(Threads REQUIRED) # pipeline worker thread (std::thread -> pthread)
+target_link_libraries(ainstec_cam PRIVATE Ainstec::CamSDK Threads::Threads)
 ainstec_copy_runtime_dlls(ainstec_cam)
 
 if(ACAM_BUILD_TESTS)

@@ -20,7 +20,11 @@ static int g_failures = 0;
     } while (0)
 
 int main() {
+#ifdef _WIN32
     _putenv("ACAM_MOCK=1"); // must happen before ac_context_create()
+#else
+    setenv("ACAM_MOCK", "1", 1);
+#endif
 
     CHECK(ac_last_error() != nullptr);
 
