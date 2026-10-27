@@ -2,6 +2,8 @@
 
 libainstecmono 是 Ainstec 3D 相机的分层软件栈，分层方式对标 librealsense / OrbbecSDK：厂商闭源内核之上叠一层自研、ABI 稳定的 C 接口，再向上是 Python 绑定、ROS 2 主通道与 UI。
 
+通用模型不经过 ROS。一次采集在 `pyainstec.Sample` 里交出深度、RGB、设备时间戳和标定；契约见 [model.md](model.md)。ROS 2 仍是 UI 和现有生态的入口。
+
 ## 四层与对标映射
 
 | 层 | 本仓库 | librealsense | OrbbecSDK |

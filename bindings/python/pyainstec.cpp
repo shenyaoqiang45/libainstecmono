@@ -3,6 +3,7 @@
 // Pythonic mirror of the C object model:
 //   Context -> query_devices() -> [Device] -> .sensors -> [Sensor] (borrowed)
 //   Pipeline(context).open(device)/start/trigger/wait_for_frames() -> FrameSet
+//   Pipeline.wait_sample() -> Sample (zero-copy planes + calibration + timestamp)
 //   FrameSet -> Frame (typed, refcounted); Filter(name).process(fs) -> FrameSet
 // Any nonzero C return code raises pyainstec.Error (a RuntimeError subclass)
 // with ac_last_error() as the message.
@@ -13,6 +14,7 @@
 
 #include <ainstec_cam/ainstec_cam.h>
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
@@ -56,6 +58,75 @@ template <typename Fn>
 auto blocking(Fn&& fn) -> decltype(fn()) {
     py::gil_scoped_release release;
     return fn();
+}
+
+// Depth arrays stay in millimeters (same unit as the point cloud). Meters are
+// depth * kDepthScaleM. The native sample does not allocate a meter copy.
+constexpr double kDepthScaleM = 0.001;
+
+// True when `calib` is a calibration dict whose depth camera matches the
+// depth-map size. A missing cache, a null depth block, or a size change
+// (depth alignment switched) is a miss.
+bool calibration_matches(const py::object& calib, bool has_depth, uint32_t w, uint32_t h) {
+    if (!calib || calib.is_none())
+        return false;
+    if (!has_depth)
+        return true;
+    if (!calib.contains("depth"))
+        return false;
+    py::object depth = calib["depth"];
+    if (depth.is_none())
+        return false;
+    try {
+        return depth["width"].cast<uint32_t>() == w && depth["height"].cast<uint32_t>() == h;
+    } catch (const py::cast_error&) {
+        return false;
+    }
+}
+
+// Zero-copy numpy view of one plane. `owner` is the base object that keeps
+// the frame buffer alive (the Sample). Absent frames are None.
+py::object plane_view(ac_frame_t* frame, py::handle owner) {
+    if (frame == nullptr)
+        return py::none();
+    uint32_t w = 0, h = 0;
+    const void* data = nullptr;
+    size_t bytes = 0;
+    check(ac_frame_get_size(frame, &w, &h));
+    check(ac_frame_get_data(frame, &data, &bytes));
+    (void)bytes;
+    const py::ssize_t H = static_cast<py::ssize_t>(h);
+    const py::ssize_t W = static_cast<py::ssize_t>(w);
+    const py::ssize_t f32 = static_cast<py::ssize_t>(sizeof(float));
+    switch (ac_frame_get_type(frame)) {
+    case AC_FRAME_DEPTH:
+        return py::array_t<float>(
+            py::array::ShapeContainer{H, W},
+            py::array::StridesContainer{W * f32, f32},
+            static_cast<const float*>(data), owner);
+    case AC_FRAME_IR:
+        return py::array_t<uint8_t>(
+            py::array::ShapeContainer{H, W},
+            py::array::StridesContainer{W, py::ssize_t{1}},
+            static_cast<const uint8_t*>(data), owner);
+    case AC_FRAME_RGB:
+        return py::array_t<uint8_t>(
+            py::array::ShapeContainer{H, W, py::ssize_t{3}},
+            py::array::StridesContainer{W * 3, py::ssize_t{3}, py::ssize_t{1}},
+            static_cast<const uint8_t*>(data), owner);
+    case AC_FRAME_POINTS:
+        return py::array_t<float>(
+            py::array::ShapeContainer{W, py::ssize_t{3}},
+            py::array::StridesContainer{py::ssize_t{12}, f32},
+            static_cast<const float*>(data), owner);
+    case AC_FRAME_NORMALS:
+        return py::array_t<float>(
+            py::array::ShapeContainer{H, W, py::ssize_t{3}},
+            py::array::StridesContainer{W * py::ssize_t{12}, py::ssize_t{12}, f32},
+            static_cast<const float*>(data), owner);
+    default:
+        throw AcamError("plane_view: unknown frame type");
+    }
 }
 
 // ---------------------------------------------------------------- Context ---
@@ -422,6 +493,68 @@ private:
     std::vector<ac_frame_t*> frames_;
 };
 
+// ----------------------------------------------------------------- Sample ---
+
+// One capture, packaged for a model: shared device timestamp, zero-copy
+// planes, and a calibration snapshot taken for this depth-map size.
+class Sample {
+public:
+    Sample(FrameSet frameset, py::object calibration)
+        : frameset_(std::move(frameset)), calibration_(std::move(calibration)) {
+        const size_t n = ac_frameset_count(frameset_.handle());
+        for (size_t i = 0; i < n; ++i) {
+            ac_frame_t* frame = ac_frameset_get(frameset_.handle(), i);
+            uint64_t index = 0;
+            double timestamp_s = 0.0;
+            check(ac_frame_get_info(frame, &index, &timestamp_s));
+            if (i == 0) {
+                index_ = index;
+                timestamp_s_ = timestamp_s;
+            } else if (index != index_ || timestamp_s != timestamp_s_) {
+                throw AcamError("Sample: planes do not share one capture timestamp");
+            }
+        }
+        ac_frame_t* depth = ac_frameset_find(frameset_.handle(), AC_FRAME_DEPTH);
+        if (depth == nullptr)
+            return;
+        uint32_t w = 0, h = 0;
+        const void* data = nullptr;
+        size_t bytes = 0;
+        check(ac_frame_get_size(depth, &w, &h));
+        check(ac_frame_get_data(depth, &data, &bytes));
+        (void)bytes;
+        depth_count_ = static_cast<size_t>(w) * static_cast<size_t>(h);
+        const float* z = static_cast<const float*>(data);
+        for (size_t i = 0; i < depth_count_; ++i) {
+            if (std::isfinite(z[i]) && z[i] > 0.0f)
+                ++depth_valid_;
+        }
+    }
+
+    Sample(const Sample&) = delete;
+    Sample& operator=(const Sample&) = delete;
+    Sample(Sample&&) = default;
+    Sample& operator=(Sample&&) = delete;
+
+    uint64_t index() const { return index_; }
+    double timestamp_s() const { return timestamp_s_; }
+    size_t depth_valid() const { return depth_valid_; }
+    size_t depth_count() const { return depth_count_; }
+    py::object calibration() const { return calibration_; }
+
+    py::object plane(ac_frame_type type, py::handle owner) const {
+        return plane_view(ac_frameset_find(frameset_.handle(), type), owner);
+    }
+
+private:
+    FrameSet frameset_;
+    py::object calibration_;
+    uint64_t index_ = 0;
+    double timestamp_s_ = 0.0;
+    size_t depth_valid_ = 0;
+    size_t depth_count_ = 0;
+};
+
 // ----------------------------------------------------------------- Filter ---
 
 class Filter {
@@ -465,6 +598,7 @@ public:
         ac_device_t* dev = device.cast<Device&>().handle();
         blocking([&] { return check(ac_pipeline_open(pipe_, dev)); });
         device_ = std::move(device); // keep the device alive while bound
+        calib_ = py::none();         // depth size may differ on the new device
     }
     void start() { check(ac_pipeline_start(pipe_)); }
     void stop() { check(ac_pipeline_stop(pipe_)); }
@@ -482,13 +616,35 @@ public:
         return FrameSet(set);
     }
 
+    // Pop one capture and attach the calibration that matches its depth map.
+    // The calibration dict is cached on the pipeline and re-read only when
+    // the depth-map size changes.
+    Sample wait_sample(uint32_t timeout_ms) {
+        FrameSet frames = wait_for_frames(timeout_ms);
+        return Sample(std::move(frames), calibration_snapshot(frames));
+    }
+
     Pipeline& enter() { return *this; }
     void exit(const py::args&) { stop(); }
 
 private:
+    py::object calibration_snapshot(const FrameSet& frames) {
+        ac_frame_t* depth = ac_frameset_find(frames.handle(), AC_FRAME_DEPTH);
+        uint32_t w = 0, h = 0;
+        if (depth != nullptr)
+            check(ac_frame_get_size(depth, &w, &h));
+        if (!calibration_matches(calib_, depth != nullptr, w, h)) {
+            if (!device_ || device_.is_none())
+                throw AcamError("wait_sample: pipeline has no device");
+            calib_ = device_.cast<Device&>().calibration();
+        }
+        return py::module_::import("copy").attr("deepcopy")(calib_);
+    }
+
     ac_pipeline_t* pipe_ = nullptr;
-    py::object context_;          // context must outlive the pipeline
+    py::object context_;             // context must outlive the pipeline
     py::object device_ = py::none(); // bound device (if any)
+    py::object calib_ = py::none();  // last calibration(); refreshed on size change
     double auto_trigger_hz_ = 0.0;
 };
 
@@ -591,6 +747,35 @@ PYBIND11_MODULE(pyainstec, m) {
         .def("find", &FrameSet::find, py::arg("frame_type"),
              "First frame of the given FRAME_* type, or None.");
 
+    auto plane = [](ac_frame_type type) {
+        return [type](py::handle self) {
+            return self.cast<const Sample&>().plane(type, self);
+        };
+    };
+    py::class_<Sample>(m, "Sample")
+        .def_property_readonly("index", &Sample::index,
+                               "Per-device capture counter, shared by every plane.")
+        .def_property_readonly("timestamp_s", &Sample::timestamp_s,
+                               "Device capture time in seconds, shared by every plane.")
+        .def_property_readonly("depth_scale_m", [](const Sample&) { return kDepthScaleM; },
+                               "Meters per depth unit. depth_m = depth * depth_scale_m.")
+        .def_property_readonly("depth_valid", &Sample::depth_valid,
+                               "Depth pixels that are finite and greater than 0.")
+        .def_property_readonly("depth_count", &Sample::depth_count,
+                               "Depth pixels (H*W); 0 when the capture has no depth.")
+        .def_property_readonly("calibration", &Sample::calibration,
+                               "Snapshot of Device.calibration() for this depth-map size.")
+        .def_property_readonly("depth", plane(AC_FRAME_DEPTH),
+                               "(H, W) float32 millimeters, zero-copy, or None.")
+        .def_property_readonly("ir", plane(AC_FRAME_IR),
+                               "(H, W) uint8, zero-copy, or None.")
+        .def_property_readonly("rgb", plane(AC_FRAME_RGB),
+                               "(H, W, 3) uint8, zero-copy, or None.")
+        .def_property_readonly("points", plane(AC_FRAME_POINTS),
+                               "(N, 3) float32 millimeters, zero-copy, or None.")
+        .def_property_readonly("normals", plane(AC_FRAME_NORMALS),
+                               "(H, W, 3) float32, zero-copy, or None.");
+
     py::class_<Filter>(m, "Filter")
         .def(py::init<const std::string&>(), py::arg("name"))
         .def("set_config", &Filter::set_config, py::arg("key"), py::arg("value"),
@@ -609,6 +794,9 @@ PYBIND11_MODULE(pyainstec, m) {
                       "Self-trigger rate in Hz (0 = manual).")
         .def("wait_for_frames", &Pipeline::wait_for_frames, py::arg("timeout_ms"),
              "Pop the next frameset; raises Error('timeout') on timeout.")
+        .def("wait_sample", &Pipeline::wait_sample, py::arg("timeout_ms"),
+             "Pop the next capture as a Sample (zero-copy planes, device timestamp, "
+             "calibration). Raises Error('timeout') on timeout.")
         .def("__enter__", &Pipeline::enter)
         .def("__exit__", &Pipeline::exit);
 }

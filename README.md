@@ -67,6 +67,14 @@ cmake --install build --config RelWithDebInfo   # 刷新 install/python 暂存�
 
 `install/python/` 是自包含目录（pyd + 全部 DLL），ROS 2 激活脚本把它加入 `PYTHONPATH`/`PATH`；也可手工加入后在任意 Python 3.11 中 `import pyainstec`。
 
+### 给模型的原生样本
+
+训练和推理直接消费 `Pipeline.wait_sample()`，不经过 ROS。返回的 `Sample` 把同一次采集的深度（float32 毫米）、RGB、设备时间戳和标定打在一起，数组是零拷贝视图。字段、单位和后续全景见 [docs/model.md](docs/model.md)。
+
+```bash
+python examples/model_sample.py   # 强制 ACAM_MOCK=1，打印一份样本
+```
+
 ### ROS 2（RoboStack on Windows）
 
 ```powershell
@@ -107,5 +115,6 @@ UI 经 rosbridge WebSocket（`:9090`）取数，需先启动 `viewer.launch.py`�
 ## 文档
 
 - [docs/architecture.md](docs/architecture.md) — 架构分层、对象模型、线程/错误模型、mock 后端、厂商集成坑。
+- [docs/model.md](docs/model.md) — 面向通用模型的原生样本契约（P0）与后续全景。
 - [docs/ros2.md](docs/ros2.md) — ROS 2 通道契约（话题/服务/参数/QoS/launch）与 Windows/RoboStack 实操要点。
 - [AGENTS.md](AGENTS.md) — 仓库约定（构建测试命令、ABI 边界、协作规则）。

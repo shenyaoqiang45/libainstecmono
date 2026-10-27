@@ -355,3 +355,111 @@ def test_frame_survives_frameset_release(pipeline):
     del fs
     gc.collect()
     assert frame.rgb().shape == (512, 640, 3)
+
+
+# --------------------------------------------------------- model-native sample
+
+
+def test_wait_sample_contract(pipeline):
+    pipeline.trigger()
+    fs = pipeline.wait_for_frames(5000)
+    # One capture stamps every plane with the same device time.
+    stamp = fs.find(ac.FRAME_DEPTH).timestamp
+    assert fs.find(ac.FRAME_RGB).timestamp == stamp
+    assert fs.find(ac.FRAME_IR).timestamp == stamp
+    assert fs.find(ac.FRAME_POINTS).timestamp == stamp
+    copied = fs.find(ac.FRAME_DEPTH).depth()
+    assert copied.flags.owndata
+
+    pipeline.trigger()
+    sample = pipeline.wait_sample(5000)
+    assert sample.index == fs.find(ac.FRAME_DEPTH).index + 1
+    assert sample.timestamp_s > 0.0
+    assert sample.depth_scale_m == 0.001
+    assert sample.depth.shape == (512, 640)
+    assert sample.depth.dtype == np.float32
+    assert sample.depth.flags.c_contiguous
+    assert not sample.depth.flags.owndata
+    np.testing.assert_array_equal(sample.depth, copied)
+    assert sample.rgb.shape == (512, 640, 3) and sample.rgb.dtype == np.uint8
+    assert sample.ir.shape == (512, 640) and sample.ir.dtype == np.uint8
+    assert sample.points.shape == (512 * 640, 3) and sample.points.dtype == np.float32
+    assert sample.normals is None
+    # Point cloud z is the depth pixel, both in millimeters.
+    y, x = 10, 20
+    assert float(sample.points[y * 640 + x, 2]) == float(sample.depth[y, x])
+    assert sample.calibration["depth"]["fx"] == 500.0
+    assert sample.calibration["rgb"]["fx"] == 520.0
+    assert sample.depth_count == 512 * 640
+    assert sample.depth_valid == sample.depth_count
+
+
+def test_wait_sample_view_lifetime(pipeline):
+    pipeline.trigger()
+    sample = pipeline.wait_sample(5000)
+    view = sample.depth
+    copied = np.array(view, copy=True)
+    ptr = view.__array_interface__["data"][0]
+    again = sample.depth
+    assert again.__array_interface__["data"][0] == ptr
+    del again
+    gc.collect()
+    assert view.__array_interface__["data"][0] == ptr
+    np.testing.assert_array_equal(view, copied)
+    # The array keeps the sample (and the frame) alive after the name is dropped.
+    del sample
+    gc.collect()
+    assert view.__array_interface__["data"][0] == ptr
+    np.testing.assert_array_equal(view, copied)
+
+
+def test_wait_sample_without_rgb(ctx, open_device):
+    open_device.sensors[1].outputs = 0
+    pipe = ac.Pipeline(ctx)
+    pipe.open(open_device)
+    pipe.start()
+    try:
+        pipe.trigger()
+        sample = pipe.wait_sample(5000)
+        assert sample.rgb is None
+        assert sample.depth.shape == (512, 640)
+        assert sample.calibration["rgb"]["fx"] == 520.0
+    finally:
+        pipe.stop()
+
+
+def test_wait_sample_timeout(pipeline):
+    with pytest.raises(ac.Error, match="timeout"):
+        pipeline.wait_sample(200)
+
+
+def test_wait_sample_playback(tmp_path, ctx, open_device):
+    path = str(tmp_path / "sample.acam")
+    open_device.record_to_file(path)
+    with ac.Pipeline(ctx) as pipe:
+        pipe.open(open_device)
+        pipe.start()
+        pipe.trigger()
+        live = pipe.wait_sample(5000)
+        depth = np.array(live.depth, copy=True)
+        rgb0 = int(live.rgb[0, 0, 0])
+    open_device.stop_record()
+
+    play = ctx.load_device(path)
+    play.open()
+    try:
+        with ac.Pipeline(ctx) as pipe:
+            pipe.open(play)
+            pipe.start()
+            pipe.trigger()
+            sample = pipe.wait_sample(5000)
+            assert sample.depth.shape == (512, 640)
+            assert sample.depth_scale_m == 0.001
+            assert sample.calibration["depth"]["fx"] == 500.0
+            assert sample.calibration["rgb"]["fx"] == 520.0
+            assert sample.depth_valid == sample.depth_count
+            np.testing.assert_array_equal(sample.depth, depth)
+            assert int(sample.rgb[0, 0, 0]) == rgb0
+            assert not sample.depth.flags.owndata
+    finally:
+        play.close()
