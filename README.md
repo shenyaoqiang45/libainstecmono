@@ -100,7 +100,7 @@ cmd / git-bash 用户可用 `scripts\ros_shell.bat <命令>` 在激活环境中�
 cd ui && npm install && npm run dev    # http://localhost:5173
 ```
 
-UI 经 rosbridge WebSocket（`:9090`）取数，需先启动 `viewer.launch.py`。UI 内部结构见其自身文档，本仓库只约定上述契约。
+UI 经 rosbridge WebSocket（`:9090`）取数，需先启动 `viewer.launch.py`。页眉「仿真」是人形头部相机探索房间；「抓取」是协作臂用腕部相机夹取桌面物体。两者都不需要 ROS，虚拟相机内参与 mock 相同。见 [docs/sim.md](docs/sim.md)。
 
 ### 真机注意
 
@@ -116,5 +116,6 @@ UI 经 rosbridge WebSocket（`:9090`）取数，需先启动 `viewer.launch.py`�
 
 - [docs/architecture.md](docs/architecture.md) — 架构分层、对象模型、线程/错误模型、mock 后端、厂商集成坑。
 - [docs/model.md](docs/model.md) — 面向通用模型的原生样本契约（P0）与后续全景。
+- [docs/sim.md](docs/sim.md) — 人形 + 头部相机的房间探索仿真（UI，不经过 ROS）。
 - [docs/ros2.md](docs/ros2.md) — ROS 2 通道契约（话题/服务/参数/QoS/launch）与 Windows/RoboStack 实操要点。
 - [AGENTS.md](AGENTS.md) — 仓库约定（构建测试命令、ABI 边界、协作规则）。

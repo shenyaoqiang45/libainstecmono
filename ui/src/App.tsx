@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Ros } from 'roslib';
 import { connect, useRosState } from './ros';
 import ConnectionBar from './components/ConnectionBar';
@@ -9,9 +9,12 @@ import IrView from './components/IrView';
 import RgbView from './components/RgbView';
 import ParamsPanel from './components/ParamsPanel';
 import PointCloudView from './components/PointCloudView';
+import SimView from './sim/SimView';
+import ArmView from './sim/ArmView';
 
 export default function App() {
   const { status, ros } = useRosState();
+  const [mode, setMode] = useState<'camera' | 'sim' | 'arm'>('camera');
 
   useEffect(() => {
     connect();
@@ -23,8 +26,36 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <h1>Ainstec Camera Viewer</h1>
+        <div className="mode-switch">
+          <button
+            type="button"
+            className={mode === 'camera' ? '' : 'secondary'}
+            onClick={() => setMode('camera')}
+          >
+            相机
+          </button>
+          <button
+            type="button"
+            className={mode === 'sim' ? '' : 'secondary'}
+            onClick={() => setMode('sim')}
+          >
+            仿真
+          </button>
+          <button
+            type="button"
+            className={mode === 'arm' ? '' : 'secondary'}
+            onClick={() => setMode('arm')}
+          >
+            抓取
+          </button>
+        </div>
         <ConnectionBar />
       </header>
+      {mode === 'sim' ? (
+        <SimView />
+      ) : mode === 'arm' ? (
+        <ArmView />
+      ) : (
       <main className="grid">
         <section className="panel area-cloud">
           <h2>Point Cloud (preview)</h2>
@@ -55,6 +86,7 @@ export default function App() {
           <ParamsPanel ros={activeRos} />
         </section>
       </main>
+      )}
     </div>
   );
 }
